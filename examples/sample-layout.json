@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "title": "Order-to-cash: current state",
+  "elements": [
+    {"id": "b1", "type": "rect", "x": 0.06, "y": 0.22, "w": 0.2, "h": 0.14, "text": "Customer places order"},
+    {"id": "b2", "type": "rounded_rect", "x": 0.4, "y": 0.22, "w": 0.2, "h": 0.14, "text": "Order validation"},
+    {"id": "d1", "type": "diamond", "x": 0.72, "y": 0.18, "w": 0.22, "h": 0.22, "text": "In stock?"},
+    {"id": "e1", "type": "ellipse", "x": 0.4, "y": 0.62, "w": 0.2, "h": 0.16, "text": "Back-order queue"},
+    {"id": "t1", "type": "text", "x": 0.06, "y": 0.86, "w": 0.4, "h": 0.06, "text": "Source: ops team sketch", "size": "small"},
+    {"id": "a1", "type": "arrow", "from": "b1", "to": "b2"},
+    {"id": "a2", "type": "arrow", "from": "b2", "to": "d1", "text": "SLA 24h"},
+    {"id": "a3", "type": "arrow", "from": "d1", "to": "e1", "text": "no"},
+    {"id": "a4", "type": "double_arrow", "x1": 0.06, "y1": 0.5, "x2": 0.26, "y2": 0.5},
+    {"id": "l1", "type": "line", "x1": 0.06, "y1": 0.18, "x2": 0.94, "y2": 0.18}
+  ]
+}
