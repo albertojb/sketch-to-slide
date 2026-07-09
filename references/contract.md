@@ -28,8 +28,15 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 |---|---|---|
 | `rect` | `x, y, w, h` | plain box |
 | `rounded_rect` | `x, y, w, h` | rounded box; also the fallback for clouds and blobs |
-| `ellipse` | `x, y, w, h` | circles and ovals |
+| `ellipse` | `x, y, w, h` | ovals |
+| `circle` | `x, y, w` | true circle; `h` is derived so it renders round — use for anything drawn as a circle |
 | `diamond` | `x, y, w, h` | decision diamonds |
+| `chevron_right` | `x, y, w, h` | chevron / open arrow pointing right |
+| `chevron_down` | `x, y, w, h` | chevron pointing down |
+| `triangle_up` | `x, y, w, h` | solid-outline triangle pointing up |
+| `triangle_right` | `x, y, w, h` | triangle pointing right |
+| `triangle_down` | `x, y, w, h` | triangle pointing down |
+| `triangle_left` | `x, y, w, h` | triangle pointing left |
 | `text` | `x, y, w, h` | free-standing text, no outline, no fill |
 | `line` | `from`+`to` or `x1, y1, x2, y2` | no arrowheads |
 | `arrow` | `from`+`to` or `x1, y1, x2, y2` | arrowhead at the `to` / `(x2, y2)` end |
@@ -41,11 +48,23 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 |---|---|---|---|
 | `id` | all | — | unique string; required on any element a connector references |
 | `text` | all | `""` | content; `\n` for line breaks; on connectors it renders as a small label at the midpoint |
+| `bullets` | boxes, text | — | list of strings rendered as `• ` lines below `text`, top-anchored, left-aligned; use `"…"` for bullet rows drawn as placeholder squiggles |
 | `size` | boxes, text | `body` | `title` (20pt) / `body` (12pt) / `small` (9pt) |
 | `bold` | boxes, text | `false` | |
 | `align` | boxes, text | `center` for shapes, `left` for `text` | `left` / `center` / `right` |
 
-Connectors with `from`/`to` reference element ids; the renderer attaches the line to the edges of those boxes automatically. Use raw `x1, y1, x2, y2` only for lines that don't connect two boxes (dividers, axes, underlines).
+Connectors with `from`/`to` reference element ids; the renderer attaches them at side midpoints (top/left/bottom/right, picked by direction), glues them to the shapes so they survive editing, and routes misaligned connections as clean orthogonal elbows instead of diagonals. Use raw `x1, y1, x2, y2` only for lines that don't connect two boxes (dividers, axes, underlines).
+
+## Tidy pass (deterministic — applied by both renderer and verifier)
+
+Hand-estimated coordinates are cleaned up mechanically before rendering; structure is never changed:
+
+1. **Canvas fit** — the content bounding box is scaled and centered into the slide's content area (margins, below the title band).
+2. **Row/column alignment** — shapes whose centers are within ~5% vertically (or ~3.5% horizontally) are aligned exactly.
+3. **Size unification** — shapes whose widths/heights are within a few percent are given identical dimensions.
+4. Circles stay circular through all of the above.
+
+Coordinates only need to be roughly right; alignment and consistent sizing come out clean automatically. Getting structure right (what connects to what, what sits in which row/column) is what matters.
 
 ## Styling (fixed — not expressible per element)
 

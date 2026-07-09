@@ -55,6 +55,7 @@ def rendered_inventory(path):
 
 
 def expected_items(layout):
+    layout = R.normalize_layout(layout)
     boxes = R.boxes_by_id(layout)
     exp_shapes, exp_conns = [], []
     if layout.get("title"):
@@ -67,13 +68,13 @@ def expected_items(layout):
         if t in R.SHAPE_MAP:
             exp_shapes.append({"what": name, "auto": R.SHAPE_MAP[t], "textbox": False,
                                "center": (el["x"] + el["w"] / 2, el["y"] + el["h"] / 2),
-                               "text": str(el.get("text", "")).strip()})
+                               "text": R.expected_text(el).strip()})
         elif t == "text":
             exp_shapes.append({"what": name, "auto": None, "textbox": True,
                                "center": (el["x"] + el["w"] / 2, el["y"] + el["h"] / 2),
-                               "text": str(el.get("text", "")).strip()})
+                               "text": R.expected_text(el).strip()})
         else:
-            p1, p2 = R.resolve_connector(el, boxes)
+            p1, p2, _kind, _s1, _s2 = R.resolve_connector(el, boxes)
             exp_conns.append({"what": name, "p1": p1, "p2": p2,
                               "head": t == "double_arrow",
                               "tail": t in ("arrow", "double_arrow")})

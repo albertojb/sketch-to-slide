@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""sketch-to-slide renderer: layout JSON -> 16:9 .pptx of native PowerPoint shapes."""
+"""sketch-to-slide renderer: layout JSON -> 16:9 .pptx of native PowerPoint shapes.
+
+Applies a deterministic tidy pass (canvas fit, row/column alignment, size
+unification) so hand-estimated coordinates come out clean without changing
+the sketch's structure.
+"""
 
 import argparse
+import copy
 import json
 import sys
 
@@ -14,6 +20,7 @@ from pptx.util import Emu, Pt
 
 SLIDE_W_EMU = 12192000
 SLIDE_H_EMU = 6858000
+ASPECT = (SLIDE_W_EMU / SLIDE_H_EMU)  # 1.777...; converts normalized dx to visual units
 BLACK = RGBColor(0, 0, 0)
 WHITE = RGBColor(255, 255, 255)
 SIZE_PT = {"title": 20, "body": 12, "small": 9}
@@ -22,10 +29,28 @@ SHAPE_MAP = {
     "rect": MSO_SHAPE.RECTANGLE,
     "rounded_rect": MSO_SHAPE.ROUNDED_RECTANGLE,
     "ellipse": MSO_SHAPE.OVAL,
+    "circle": MSO_SHAPE.OVAL,
     "diamond": MSO_SHAPE.DIAMOND,
+    "chevron_right": MSO_SHAPE.CHEVRON,
+    "chevron_down": MSO_SHAPE.CHEVRON,
+    "triangle_up": MSO_SHAPE.ISOSCELES_TRIANGLE,
+    "triangle_right": MSO_SHAPE.ISOSCELES_TRIANGLE,
+    "triangle_down": MSO_SHAPE.ISOSCELES_TRIANGLE,
+    "triangle_left": MSO_SHAPE.ISOSCELES_TRIANGLE,
 }
+ROTATION = {"chevron_down": 90, "triangle_right": 90, "triangle_down": 180, "triangle_left": 270}
 CONNECTOR_TYPES = ("line", "arrow", "double_arrow")
 TITLE_BOX = (0.04, 0.035, 0.92, 0.10)
+
+MARGIN_X = (0.05, 0.95)
+MARGIN_Y_TITLED = (0.17, 0.93)
+MARGIN_Y_PLAIN = (0.06, 0.94)
+MAX_UPSCALE = 2.2
+ROW_TOL = 0.05
+COL_TOL = 0.035
+SIZE_TOL_W = 0.035
+SIZE_TOL_H = 0.05
+STRAIGHT_TOL = 0.02
 
 
 def fail(msg):
@@ -54,7 +79,11 @@ def load_layout(path):
             if eid in seen:
                 fail(f"duplicate id '{eid}'")
             seen.add(eid)
-        if t in SHAPE_MAP or t == "text":
+        if t == "circle":
+            for k in ("x", "y", "w"):
+                if not isinstance(el.get(k), (int, float)):
+                    fail(f"element {i} ('circle'): missing numeric '{k}'")
+        elif t in SHAPE_MAP or t == "text":
             for k in ("x", "y", "w", "h"):
                 if not isinstance(el.get(k), (int, float)):
                     fail(f"element {i} ('{t}'): missing numeric '{k}'")
@@ -62,6 +91,123 @@ def load_layout(path):
             for k in ("x1", "y1", "x2", "y2"):
                 if not isinstance(el.get(k), (int, float)):
                     fail(f"element {i} ('{t}'): needs from/to ids or x1,y1,x2,y2")
+        b = el.get("bullets")
+        if b is not None and (not isinstance(b, list) or not all(isinstance(s, str) for s in b)):
+            fail(f"element {i}: 'bullets' must be a list of strings")
+    return layout
+
+
+def _is_box(el):
+    return el["type"] in SHAPE_MAP or el["type"] == "text"
+
+
+def _fix_circles(elements):
+    for el in elements:
+        if el["type"] == "circle":
+            h = el["w"] * ASPECT
+            cy = el["y"] + el.get("h", h) / 2
+            el["h"] = h
+            el["y"] = cy - h / 2
+
+
+def _fit_canvas(layout):
+    els = layout["elements"]
+    pts = []
+    for el in els:
+        if _is_box(el):
+            pts += [(el["x"], el["y"]), (el["x"] + el["w"], el["y"] + el["h"])]
+        elif "x1" in el:
+            pts += [(el["x1"], el["y1"]), (el["x2"], el["y2"])]
+    if not pts:
+        return
+    x0 = min(p[0] for p in pts)
+    x1 = max(p[0] for p in pts)
+    y0 = min(p[1] for p in pts)
+    y1 = max(p[1] for p in pts)
+    bw, bh = x1 - x0, y1 - y0
+    mx0, mx1 = MARGIN_X
+    my0, my1 = MARGIN_Y_TITLED if layout.get("title") else MARGIN_Y_PLAIN
+    fx = min((mx1 - mx0) / bw, MAX_UPSCALE) if bw > 0.02 else 1.0
+    fy = min((my1 - my0) / bh, MAX_UPSCALE) if bh > 0.02 else 1.0
+    xoff = mx0 + ((mx1 - mx0) - bw * fx) / 2
+    yoff = my0 + ((my1 - my0) - bh * fy) / 2
+
+    def tx(v):
+        return xoff + (v - x0) * fx
+
+    def ty(v):
+        return yoff + (v - y0) * fy
+
+    for el in els:
+        if _is_box(el):
+            el["x"], el["y"] = tx(el["x"]), ty(el["y"])
+            el["w"], el["h"] = el["w"] * fx, el["h"] * fy
+        elif "x1" in el:
+            el["x1"], el["y1"] = tx(el["x1"]), ty(el["y1"])
+            el["x2"], el["y2"] = tx(el["x2"]), ty(el["y2"])
+
+
+def _cluster(values, tol):
+    """Greedy 1-D clustering; returns list of (mean, indices)."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    groups = []
+    for i in order:
+        if groups and abs(values[i] - groups[-1][0]) <= tol:
+            mean, idxs = groups[-1]
+            idxs.append(i)
+            groups[-1] = (sum(values[j] for j in idxs) / len(idxs), idxs)
+        else:
+            groups.append((values[i], [i]))
+    return groups
+
+
+def _align(boxes):
+    if len(boxes) < 2:
+        return
+    cys = [b["y"] + b["h"] / 2 for b in boxes]
+    for mean, idxs in _cluster(cys, ROW_TOL):
+        if len(idxs) > 1:
+            for i in idxs:
+                boxes[i]["y"] = mean - boxes[i]["h"] / 2
+    cxs = [b["x"] + b["w"] / 2 for b in boxes]
+    for mean, idxs in _cluster(cxs, COL_TOL):
+        if len(idxs) > 1:
+            for i in idxs:
+                boxes[i]["x"] = mean - boxes[i]["w"] / 2
+
+
+def _unify_sizes(boxes):
+    shapes = [b for b in boxes if b["type"] in SHAPE_MAP]
+    if len(shapes) < 2:
+        return
+    ws = [b["w"] for b in shapes]
+    for mean, idxs in _cluster(ws, SIZE_TOL_W):
+        if len(idxs) > 1:
+            for i in idxs:
+                b = shapes[i]
+                cx = b["x"] + b["w"] / 2
+                b["w"] = mean
+                b["x"] = cx - mean / 2
+    hs = [b["h"] for b in shapes]
+    for mean, idxs in _cluster(hs, SIZE_TOL_H):
+        if len(idxs) > 1:
+            for i in idxs:
+                b = shapes[i]
+                cy = b["y"] + b["h"] / 2
+                b["h"] = mean
+                b["y"] = cy - mean / 2
+
+
+def normalize_layout(layout):
+    """Deterministic tidy pass shared by render and verify. Returns a deep copy."""
+    layout = copy.deepcopy(layout)
+    els = layout["elements"]
+    _fix_circles(els)
+    _fit_canvas(layout)
+    boxes = [el for el in els if _is_box(el)]
+    _align(boxes)
+    _unify_sizes(boxes)
+    _fix_circles(els)
     return layout
 
 
@@ -73,29 +219,42 @@ def boxes_by_id(layout):
     }
 
 
-def _edge_point(box, toward):
-    x, y, w, h = box
-    cx, cy = x + w / 2, y + h / 2
-    dx, dy = toward[0] - cx, toward[1] - cy
-    if dx == 0 and dy == 0:
-        return (cx, cy)
-    tx = (w / 2) / abs(dx) if dx else float("inf")
-    ty = (h / 2) / abs(dy) if dy else float("inf")
-    t = min(tx, ty)
-    return (cx + dx * t, cy + dy * t)
+GLUE_TYPES = ("rect", "rounded_rect", "diamond")
+SIDE_TOP, SIDE_LEFT, SIDE_BOTTOM, SIDE_RIGHT = 0, 1, 2, 3
 
 
 def resolve_connector(el, boxes):
-    """Return ((x1, y1), (x2, y2)) in normalized coordinates."""
-    if "from" in el or "to" in el:
-        for key in ("from", "to"):
-            if el.get(key) not in boxes:
-                fail(f"connector '{el.get('id', '?')}' references unknown id '{el.get(key)}'")
-        b1, b2 = boxes[el["from"]], boxes[el["to"]]
-        c1 = (b1[0] + b1[2] / 2, b1[1] + b1[3] / 2)
-        c2 = (b2[0] + b2[2] / 2, b2[1] + b2[3] / 2)
-        return _edge_point(b1, c2), _edge_point(b2, c1)
-    return (el["x1"], el["y1"]), (el["x2"], el["y2"])
+    """Return ((x1, y1), (x2, y2), kind, side1, side2) in normalized coordinates.
+
+    Endpoints attach at side midpoints; kind is 'straight' when the boxes are
+    aligned on the perpendicular axis, else 'elbow'. side1/side2 are PowerPoint
+    connection-site indices (0=top, 1=left, 2=bottom, 3=right) or None for raw
+    coordinate connectors.
+    """
+    if "from" not in el and "to" not in el:
+        return (el["x1"], el["y1"]), (el["x2"], el["y2"]), "straight", None, None
+    for key in ("from", "to"):
+        if el.get(key) not in boxes:
+            fail(f"connector '{el.get('id', '?')}' references unknown id '{el.get(key)}'")
+    x1, y1, w1, h1 = boxes[el["from"]]
+    x2, y2, w2, h2 = boxes[el["to"]]
+    c1 = (x1 + w1 / 2, y1 + h1 / 2)
+    c2 = (x2 + w2 / 2, y2 + h2 / 2)
+    dx = (c2[0] - c1[0]) * ASPECT
+    dy = c2[1] - c1[1]
+    if abs(dx) >= abs(dy):
+        p1 = (x1 + w1 if dx >= 0 else x1, c1[1])
+        p2 = (x2 if dx >= 0 else x2 + w2, c2[1])
+        s1 = SIDE_RIGHT if dx >= 0 else SIDE_LEFT
+        s2 = SIDE_LEFT if dx >= 0 else SIDE_RIGHT
+        kind = "straight" if abs(c1[1] - c2[1]) <= STRAIGHT_TOL else "elbow"
+    else:
+        p1 = (c1[0], y1 + h1 if dy >= 0 else y1)
+        p2 = (c2[0], y2 if dy >= 0 else y2 + h2)
+        s1 = SIDE_BOTTOM if dy >= 0 else SIDE_TOP
+        s2 = SIDE_TOP if dy >= 0 else SIDE_BOTTOM
+        kind = "straight" if abs(c1[0] - c2[0]) <= STRAIGHT_TOL else "elbow"
+    return p1, p2, kind, s1, s2
 
 
 def label_box(el, p1, p2):
@@ -114,22 +273,51 @@ def _ey(v):
     return Emu(int(round(v * SLIDE_H_EMU)))
 
 
-def set_text(shape, text, size="body", bold=False, align="center", anchor=MSO_ANCHOR.MIDDLE):
+def expected_text(el):
+    """Full text content of a rendered element (text plus bullet lines)."""
+    lines = []
+    if el.get("text"):
+        lines.append(str(el["text"]))
+    for b in el.get("bullets") or []:
+        lines.append(f"• {b}")
+    return "\n".join(lines)
+
+
+def set_text(shape, el):
     tf = shape.text_frame
     tf.word_wrap = True
-    tf.vertical_anchor = anchor
+    bullets = el.get("bullets") or []
+    text = el.get("text", "")
+    size = el.get("size", "body")
+    bold = el.get("bold", False)
+    default_align = "left" if (el.get("type") == "text" or bullets) else "center"
+    align = el.get("align", default_align)
+    tf.vertical_anchor = MSO_ANCHOR.TOP if (el.get("type") == "text" or bullets) else MSO_ANCHOR.MIDDLE
     pt = Pt(SIZE_PT.get(size, SIZE_PT["body"]))
-    for i, line in enumerate(str(text).split("\n")):
+    lines = []
+    if text:
+        lines += [(ln, bold) for ln in str(text).split("\n")]
+    lines += [(f"• {b}", False) for b in bullets]
+    if not lines:
+        return
+    for i, (line, is_bold) in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = line
         p.alignment = ALIGN_MAP.get(align, PP_ALIGN.CENTER)
         p.font.size = pt
-        p.font.bold = bool(bold)
+        p.font.bold = bool(is_bold)
         p.font.color.rgb = BLACK
+        if bullets and i > 0:
+            p.space_before = Pt(4)
         for r in p.runs:
             r.font.size = pt
-            r.font.bold = bool(bold)
+            r.font.bold = bool(is_bold)
             r.font.color.rgb = BLACK
+
+
+def set_plain_text(shape, text, size="body", bold=False, align="center"):
+    set_text(shape, {"text": text, "size": size, "bold": bold, "align": align})
+    shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
 
 def _no_shadow(shape):
@@ -148,21 +336,40 @@ def add_arrowheads(conn, head, tail):
         ln.append(ln.makeelement(qn("a:tailEnd"), {"type": "triangle", "w": "med", "len": "med"}))
 
 
+def _add_shape(slide, el):
+    t = el["type"]
+    rot = ROTATION.get(t, 0)
+    x, y, w, h = el["x"], el["y"], el["w"], el["h"]
+    ew, eh = _ex(w), _ey(h)
+    left, top = _ex(x), _ey(y)
+    if rot in (90, 270):
+        cx, cy = left + ew / 2, top + eh / 2
+        ew, eh = eh, ew
+        left, top = int(cx - ew / 2), int(cy - eh / 2)
+    sp = slide.shapes.add_shape(SHAPE_MAP[t], left, top, ew, eh)
+    if rot:
+        sp.rotation = rot
+    return sp
+
+
 def render(layout, out_path):
     prs = Presentation()
     prs.slide_width = Emu(SLIDE_W_EMU)
     prs.slide_height = Emu(SLIDE_H_EMU)
     slide = prs.slides.add_slide(prs.slide_layouts[6])
+    layout = normalize_layout(layout)
     boxes = boxes_by_id(layout)
     counts = {"shapes": 0, "textboxes": 0, "connectors": 0, "labels": 0}
 
     if layout.get("title"):
         x, y, w, h = TITLE_BOX
         tb = slide.shapes.add_textbox(_ex(x), _ey(y), _ex(w), _ey(h))
-        set_text(tb, layout["title"], size="title", bold=True, align="left")
+        set_plain_text(tb, layout["title"], size="title", bold=True, align="left")
         counts["textboxes"] += 1
 
     connectors = []
+    shapes_by_id = {}
+    types_by_id = {}
     for el in layout["elements"]:
         t = el["type"]
         if t in CONNECTOR_TYPES:
@@ -170,24 +377,39 @@ def render(layout, out_path):
             continue
         if t == "text":
             tb = slide.shapes.add_textbox(_ex(el["x"]), _ey(el["y"]), _ex(el["w"]), _ey(el["h"]))
-            set_text(tb, el.get("text", ""), el.get("size", "body"), el.get("bold", False),
-                     el.get("align", "left"), anchor=MSO_ANCHOR.TOP)
+            set_text(tb, el)
+            if el.get("id"):
+                shapes_by_id[el["id"]] = tb
+                types_by_id[el["id"]] = t
             counts["textboxes"] += 1
             continue
-        sp = slide.shapes.add_shape(SHAPE_MAP[t], _ex(el["x"]), _ey(el["y"]), _ex(el["w"]), _ey(el["h"]))
+        sp = _add_shape(slide, el)
         sp.fill.solid()
         sp.fill.fore_color.rgb = WHITE
         sp.line.color.rgb = BLACK
         sp.line.width = Pt(1)
         _no_shadow(sp)
-        if el.get("text"):
-            set_text(sp, el["text"], el.get("size", "body"), el.get("bold", False), el.get("align", "center"))
+        if el.get("text") or el.get("bullets"):
+            set_text(sp, el)
+        if el.get("id"):
+            shapes_by_id[el["id"]] = sp
+            types_by_id[el["id"]] = t
         counts["shapes"] += 1
 
     for el in connectors:
-        p1, p2 = resolve_connector(el, boxes)
-        conn = slide.shapes.add_connector(
-            MSO_CONNECTOR.STRAIGHT, _ex(p1[0]), _ey(p1[1]), _ex(p2[0]), _ey(p2[1]))
+        p1, p2, kind, s1, s2 = resolve_connector(el, boxes)
+        glue1 = types_by_id.get(el.get("from")) in GLUE_TYPES
+        glue2 = types_by_id.get(el.get("to")) in GLUE_TYPES
+        # bentConnector3 routes horizontal-first; vertical-dominant elbows only
+        # look right when glued sites let PowerPoint re-route them
+        horiz = s1 in (SIDE_LEFT, SIDE_RIGHT)
+        use_elbow = kind == "elbow" and (horiz or (glue1 and glue2))
+        ctype = MSO_CONNECTOR.ELBOW if use_elbow else MSO_CONNECTOR.STRAIGHT
+        conn = slide.shapes.add_connector(ctype, _ex(p1[0]), _ey(p1[1]), _ex(p2[0]), _ey(p2[1]))
+        if glue1:
+            conn.begin_connect(shapes_by_id[el["from"]], s1)
+        if glue2:
+            conn.end_connect(shapes_by_id[el["to"]], s2)
         conn.line.color.rgb = BLACK
         conn.line.width = Pt(1.5)
         _no_shadow(conn)
@@ -200,7 +422,7 @@ def render(layout, out_path):
             tb.fill.solid()
             tb.fill.fore_color.rgb = WHITE
             tb.line.fill.background()
-            set_text(tb, el["text"], "small", False, "center")
+            set_plain_text(tb, el["text"], "small", False, "center")
             counts["labels"] += 1
 
     prs.save(out_path)
