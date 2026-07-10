@@ -390,6 +390,9 @@ def _distribute(boxes, connectors, axis):
         g["lo"], g["hi"] = pos, pos + size
         pos += size + gap
     for d in decor:
+        # header bands are seated by _seat_headers, never gap decorations
+        if all(b.get("header") for b in d["boxes"]):
+            continue
         i = decor_gap.get(id(d))
         if i is None:
             continue
@@ -444,7 +447,7 @@ def _expand_tables(layout):
     layout["elements"] = out
 
 
-def _snap_frames(boxes, fy=1.0):
+def _snap_frames(boxes, fy):
     """Canonical frame ratios (contract: consulting exception 3): 2-3 tall
     column-groups jointly spanning the content area, whose width fractions
     are within RATIO_TOL of a canonical consulting split, snap to the exact
