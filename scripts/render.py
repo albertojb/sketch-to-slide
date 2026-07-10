@@ -54,6 +54,10 @@ STRAIGHT_TOL = 0.02
 FLUSH_TOL = 0.015
 GAP_RATIO_MAX = 2.0
 DECOR_FRAC = 0.5
+FRAME_H_FRAC = 0.55
+FRAME_COVER_FRAC = 0.70
+RATIO_TOL = 0.08
+FRAME_CANONS = ([1 / 3, 2 / 3], [2 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3], [0.25, 0.5, 0.25])
 
 
 def fail(msg):
@@ -381,6 +385,65 @@ def _expand_tables(layout):
     layout["elements"] = out
 
 
+def _snap_frames(boxes):
+    """Canonical frame ratios (contract: consulting exception 3): 2-3 tall
+    column-groups jointly spanning the content area, whose width fractions
+    are within RATIO_TOL of a canonical consulting split, snap to the exact
+    ratio. Widths scale per group; original gaps are preserved here and
+    equalized afterwards by _distribute.
+
+    ponytail: horizontal (left-to-right) frames only; vertical splits when a
+    real sketch needs them.
+    """
+    if not boxes:
+        return
+    x0 = min(b["x"] for b in boxes)
+    x1 = max(b["x"] + b["w"] for b in boxes)
+    y0 = min(b["y"] for b in boxes)
+    y1 = max(b["y"] + b["h"] for b in boxes)
+    content_w, content_h = x1 - x0, y1 - y0
+    if content_w <= 0 or content_h <= 0:
+        return
+    frames = []
+    for g in _groups_by_center(boxes, 0):
+        gy0 = min(b["y"] for b in g["boxes"])
+        gy1 = max(b["y"] + b["h"] for b in g["boxes"])
+        if gy1 - gy0 >= FRAME_H_FRAC * content_h:
+            frames.append(g)
+    if len(frames) not in (2, 3):
+        return
+    frames.sort(key=lambda g: g["lo"])
+    for a, b in zip(frames, frames[1:]):
+        if b["lo"] - a["hi"] < -0.005:
+            return
+    widths = [g["hi"] - g["lo"] for g in frames]
+    total = sum(widths)
+    if total < FRAME_COVER_FRAC * content_w:
+        return
+    fracs = [w / total for w in widths]
+    best = None
+    for canon in FRAME_CANONS:
+        if len(canon) != len(frames):
+            continue
+        d = max(abs(f - c) for f, c in zip(fracs, canon))
+        if d <= RATIO_TOL and (best is None or d < best[0]):
+            best = (d, canon)
+    if best is None:
+        return
+    gaps = [b["lo"] - a["hi"] for a, b in zip(frames, frames[1:])]
+    pos = frames[0]["lo"]
+    for i, (g, c) in enumerate(zip(frames, best[1])):
+        new_w = c * total
+        f = new_w / (g["hi"] - g["lo"])
+        dv = pos - g["lo"]
+        for b in g["boxes"]:
+            b["x"] = pos + (b["x"] - g["lo"]) * f
+            b["w"] *= f
+        g["lo"], g["hi"] = pos, pos + new_w
+        if i < len(gaps):
+            pos += new_w + gaps[i]
+
+
 def normalize_layout(layout):
     """Deterministic tidy pass shared by render and verify. Returns a deep copy."""
     layout = copy.deepcopy(layout)
@@ -392,6 +455,7 @@ def normalize_layout(layout):
     _align(boxes)
     _unify_sizes(boxes)
     _snap_flush(boxes)
+    _snap_frames(boxes)
     _distribute(boxes, connectors, 0)
     _distribute(boxes, connectors, 1)
     _fix_circles(els)

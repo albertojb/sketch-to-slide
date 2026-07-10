@@ -64,6 +64,31 @@ def test_bridged_gaps_equalize():
     assert abs(g[0] - g[1]) < 1e-6, f"bridged gaps not equalized: {g}"
 
 
+def _frame(eid, x, w, h=0.6):
+    return {"id": eid, "type": "rect", "x": x, "y": 0.2, "w": w, "h": h, "text": eid}
+
+
+def test_frames_snap_two_thirds():
+    layout = {"version": 1, "elements": [_frame("f1", 0.05, 0.55), _frame("f2", 0.68, 0.30)]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    ratio = byid["f1"]["w"] / byid["f2"]["w"]
+    assert abs(ratio - 2.0) < 1e-9, f"2/3+1/3 not snapped, ratio {ratio}"
+
+
+def test_frames_quarter_half_quarter():
+    layout = {"version": 1, "elements": [
+        _frame("f1", 0.05, 0.18), _frame("f2", 0.27, 0.42), _frame("f3", 0.73, 0.20)]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    assert abs(byid["f2"]["w"] / byid["f1"]["w"] - 2.0) < 1e-9, "center frame not 2x side frame"
+    assert abs(byid["f1"]["w"] - byid["f3"]["w"]) < 1e-9, "side frames not equal"
+
+
+def test_fifty_fifty_untouched():
+    layout = {"version": 1, "elements": [_frame("f1", 0.05, 0.40), _frame("f2", 0.55, 0.40)]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    assert abs(byid["f1"]["w"] - byid["f2"]["w"]) < 1e-9, "50/50 frames should stay equal (untouched)"
+
+
 def test_table_expansion():
     els = R.normalize_layout(load_example("effort-table.json"))["elements"]
     parts = [e for e in els if e.get("id", "").startswith("t1.")]
@@ -127,9 +152,10 @@ def test_end_to_end():
 
 if __name__ == "__main__":
     for check in (test_scr_distribution, test_uneven_untouched,
-                  test_bridged_gaps_equalize, test_table_expansion,
-                  test_no_native_table_object, test_connector_to_table_rejected,
-                  test_end_to_end):
+                  test_bridged_gaps_equalize, test_frames_snap_two_thirds,
+                  test_frames_quarter_half_quarter, test_fifty_fifty_untouched,
+                  test_table_expansion, test_no_native_table_object,
+                  test_connector_to_table_rejected, test_end_to_end):
         check()
         print(f"ok {check.__name__}")
     print("all checks passed")
