@@ -73,9 +73,10 @@ def load_layout(path):
     if not isinstance(elements, list) or not elements:
         fail("layout needs a non-empty 'elements' list")
     seen = set()
+    table_ids = set()
     for i, el in enumerate(elements):
         t = el.get("type")
-        if t not in SHAPE_MAP and t != "text" and t not in CONNECTOR_TYPES:
+        if t not in SHAPE_MAP and t not in ("text", "table") and t not in CONNECTOR_TYPES:
             fail(f"element {i}: unknown type '{t}'")
         eid = el.get("id")
         if eid is not None:
@@ -86,7 +87,7 @@ def load_layout(path):
             for k in ("x", "y", "w"):
                 if not isinstance(el.get(k), (int, float)):
                     fail(f"element {i} ('circle'): missing numeric '{k}'")
-        elif t in SHAPE_MAP or t == "text":
+        elif t in SHAPE_MAP or t in ("text", "table"):
             for k in ("x", "y", "w", "h"):
                 if not isinstance(el.get(k), (int, float)):
                     fail(f"element {i} ('{t}'): missing numeric '{k}'")
@@ -94,14 +95,34 @@ def load_layout(path):
             for k in ("x1", "y1", "x2", "y2"):
                 if not isinstance(el.get(k), (int, float)):
                     fail(f"element {i} ('{t}'): needs from/to ids or x1,y1,x2,y2")
+        if t == "table":
+            rows = el.get("rows")
+            if (not isinstance(rows, list) or not rows
+                    or not all(isinstance(r, list) and r and all(isinstance(c, str) for c in r) for r in rows)):
+                fail(f"element {i} ('table'): 'rows' must be a non-empty list of lists of strings")
+            cols = el.get("columns")
+            if cols is not None and (not isinstance(cols, list) or not cols
+                                     or not all(isinstance(c, str) for c in cols)):
+                fail(f"element {i} ('table'): 'columns' must be a non-empty list of strings")
+            ncols = len(cols) if cols else len(rows[0])
+            if any(len(r) != ncols for r in rows):
+                fail(f"element {i} ('table'): every row must have {ncols} cells")
+            if eid is not None:
+                table_ids.add(eid)
         b = el.get("bullets")
         if b is not None and (not isinstance(b, list) or not all(isinstance(s, str) for s in b)):
             fail(f"element {i}: 'bullets' must be a list of strings")
+    for el in elements:
+        if el.get("type") in CONNECTOR_TYPES:
+            for key in ("from", "to"):
+                if el.get(key) in table_ids:
+                    fail(f"connector '{el.get('id', '?')}' references table '{el[key]}'; "
+                         "connectors cannot attach to tables")
     return layout
 
 
 def _is_box(el):
-    return el["type"] in SHAPE_MAP or el["type"] == "text"
+    return el["type"] in SHAPE_MAP or el["type"] in ("text", "table")
 
 
 def _fix_circles(elements):
@@ -317,6 +338,49 @@ def _distribute(boxes, connectors, axis):
             b[p] += dv
 
 
+CELL_PAD = 0.005
+
+
+def _table_elements(el):
+    """Expand a table into native primitives: bold header boxes, borderless
+    left-aligned text cells, and a horizontal separator line under each body
+    row. Never a native PPT table object (contract rule).
+    """
+    x, y, w, h = el["x"], el["y"], el["w"], el["h"]
+    cols = el.get("columns") or []
+    rows = el["rows"]
+    ncols = len(cols) if cols else len(rows[0])
+    header = 1 if cols else 0
+    rh = h / (len(rows) + header)
+    cw = w / ncols
+    eid = el.get("id") or "table"
+    out = []
+    for j, head in enumerate(cols):
+        out.append({"id": f"{eid}.h{j}", "type": "rect", "x": x + j * cw, "y": y,
+                    "w": cw, "h": rh, "text": head, "bold": True, "size": "small"})
+    for i, row in enumerate(rows):
+        ry = y + (header + i) * rh
+        for j, cell in enumerate(row):
+            if el.get("row_headers") and j == 0:
+                out.append({"id": f"{eid}.r{i}c0", "type": "rect", "x": x, "y": ry,
+                            "w": cw, "h": rh, "text": cell, "bold": True, "size": "small"})
+            else:
+                out.append({"id": f"{eid}.r{i}c{j}", "type": "text",
+                            "x": x + j * cw + CELL_PAD, "y": ry + CELL_PAD,
+                            "w": cw - 2 * CELL_PAD, "h": rh - 2 * CELL_PAD,
+                            "text": cell, "size": "small"})
+        out.append({"id": f"{eid}.ln{i}", "type": "line",
+                    "x1": x, "y1": ry + rh, "x2": x + w, "y2": ry + rh})
+    return out
+
+
+def _expand_tables(layout):
+    out = []
+    for el in layout["elements"]:
+        out.extend(_table_elements(el) if el["type"] == "table" else [el])
+    layout["elements"] = out
+
+
 def normalize_layout(layout):
     """Deterministic tidy pass shared by render and verify. Returns a deep copy."""
     layout = copy.deepcopy(layout)
@@ -331,6 +395,7 @@ def normalize_layout(layout):
     _distribute(boxes, connectors, 0)
     _distribute(boxes, connectors, 1)
     _fix_circles(els)
+    _expand_tables(layout)
     return layout
 
 

@@ -64,6 +64,49 @@ def test_bridged_gaps_equalize():
     assert abs(g[0] - g[1]) < 1e-6, f"bridged gaps not equalized: {g}"
 
 
+def test_table_expansion():
+    els = R.normalize_layout(load_example("effort-table.json"))["elements"]
+    parts = [e for e in els if e.get("id", "").startswith("t1.")]
+    kinds = {"rect": 0, "text": 0, "line": 0}
+    for e in parts:
+        kinds[e["type"]] += 1
+    assert kinds == {"rect": 3, "text": 9, "line": 3}, f"unexpected expansion: {kinds}"
+    headers = sorted(e["x"] for e in parts if e["type"] == "rect")
+    assert abs((headers[1] - headers[0]) - (headers[2] - headers[1])) < 1e-9, "unequal column widths"
+    assert not any(e["type"] == "table" for e in els), "table not expanded"
+
+
+def test_no_native_table_object():
+    from pptx import Presentation
+    src = os.path.join(ROOT, "examples", "effort-table.json")
+    out = os.path.join(tempfile.gettempdir(), "effort-table-check.pptx")
+    subprocess.run(
+        [sys.executable, os.path.join(ROOT, "scripts", "render.py"), src, "-o", out],
+        check=True, capture_output=True,
+    )
+    prs = Presentation(out)
+    assert not any(getattr(sp, "has_table", False) for sp in prs.slides[0].shapes), \
+        "native PPT table object found in output"
+
+
+def test_connector_to_table_rejected():
+    layout = {"version": 1, "elements": [
+        {"id": "t", "type": "table", "x": 0.1, "y": 0.1, "w": 0.5, "h": 0.4, "rows": [["a"]]},
+        {"id": "b", "type": "rect", "x": 0.7, "y": 0.1, "w": 0.2, "h": 0.2, "text": "b"},
+        {"id": "arr", "type": "arrow", "from": "t", "to": "b"},
+    ]}
+    path = os.path.join(tempfile.gettempdir(), "bad-table-conn.json")
+    with open(path, "w") as f:
+        json.dump(layout, f)
+    r = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "scripts", "render.py"), path,
+         "-o", os.path.join(tempfile.gettempdir(), "bad.pptx")],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 2 and "cannot attach to tables" in r.stderr, \
+        f"connector-to-table not rejected: rc={r.returncode} stderr={r.stderr}"
+
+
 def test_end_to_end():
     for name in sorted(os.listdir(os.path.join(ROOT, "examples"))):
         if not name.endswith(".json"):
@@ -84,7 +127,9 @@ def test_end_to_end():
 
 if __name__ == "__main__":
     for check in (test_scr_distribution, test_uneven_untouched,
-                  test_bridged_gaps_equalize, test_end_to_end):
+                  test_bridged_gaps_equalize, test_table_expansion,
+                  test_no_native_table_object, test_connector_to_table_rejected,
+                  test_end_to_end):
         check()
         print(f"ok {check.__name__}")
     print("all checks passed")
