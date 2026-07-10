@@ -213,6 +213,55 @@ def test_row_wrap_connector_routes_through_gap():
     assert (s1, s2) == (R.SIDE_RIGHT, R.SIDE_LEFT), f"same-row sides {s1},{s2}"
 
 
+def test_header_seats_from_inside_frame():
+    # field test 2026-07-10 (second run): band transcribed as the frame's top
+    # compartment (band top == frame top) must seat flush ON the frame top
+    layout = {"version": 1, "title": "t", "elements": [
+        {"id": "band", "type": "rect", "x": 0.06, "y": 0.30, "w": 0.20, "h": 0.09, "text": "INPUT", "header": True},
+        {"id": "frame", "type": "rect", "x": 0.06, "y": 0.30, "w": 0.20, "h": 0.55},
+        {"id": "s1", "type": "rect", "x": 0.10, "y": 0.45, "w": 0.08, "h": 0.10},
+    ]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    delta = byid["frame"]["y"] - (byid["band"]["y"] + byid["band"]["h"])
+    assert abs(delta) < 1e-9, f"band not seated on frame top (delta {delta:+.4f})"
+    assert abs(byid["band"]["h"] - R.HEADER_H) < 1e-9
+
+
+def test_headers_render_on_top():
+    from pptx import Presentation
+    # band listed first and overlapping the frame: z-order must still put it above
+    layout = {"version": 1, "elements": [
+        {"id": "band", "type": "rect", "x": 0.10, "y": 0.20, "w": 0.40, "h": 0.08, "text": "SYS", "header": True},
+        {"id": "frame", "type": "rect", "x": 0.10, "y": 0.20, "w": 0.40, "h": 0.60},
+    ]}
+    path = os.path.join(tempfile.gettempdir(), "zorder.json")
+    with open(path, "w") as f:
+        json.dump(layout, f)
+    out = os.path.join(tempfile.gettempdir(), "zorder.pptx")
+    subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "render.py"), path, "-o", out],
+                   check=True, capture_output=True)
+    order = [sp.text_frame.text if sp.has_text_frame else "" for sp in Presentation(out).slides[0].shapes]
+    assert order.index("SYS") > order.index(""), f"band not on top: {order}"
+
+
+def test_frames_share_top_and_bottom():
+    # includes a stacked column of small boxes inside f1: its tall UNION must
+    # not count as a frame (that would make 4 candidates and disable the pass)
+    layout = {"version": 1, "elements": [
+        {"id": "f1", "type": "rect", "x": 0.05, "y": 0.28, "w": 0.24, "h": 0.56, "text": "a"},
+        {"id": "s1", "type": "rect", "x": 0.10, "y": 0.34, "w": 0.06, "h": 0.08},
+        {"id": "s2", "type": "rect", "x": 0.10, "y": 0.52, "w": 0.06, "h": 0.08},
+        {"id": "s3", "type": "rect", "x": 0.10, "y": 0.70, "w": 0.06, "h": 0.08},
+        {"id": "f2", "type": "rect", "x": 0.38, "y": 0.30, "w": 0.24, "h": 0.52, "text": "b"},
+        {"id": "f3", "type": "rect", "x": 0.71, "y": 0.32, "w": 0.24, "h": 0.48, "text": "c"},
+    ]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    tops = {round(byid[f]["y"], 9) for f in ("f1", "f2", "f3")}
+    hts = {round(byid[f]["h"], 9) for f in ("f1", "f2", "f3")}
+    assert len(tops) == 1, f"frame tops differ: {tops}"
+    assert len(hts) == 1, f"frame heights differ: {hts}"
+
+
 def test_end_to_end():
     for name in sorted(os.listdir(os.path.join(ROOT, "examples"))):
         if not name.endswith(".json"):
@@ -236,6 +285,8 @@ if __name__ == "__main__":
                   test_bridged_gaps_equalize, test_flush_in_drawn_space,
                   test_flush_survives_size_unification,
                   test_header_band_geometry, test_header_band_style,
+                  test_header_seats_from_inside_frame, test_headers_render_on_top,
+                  test_frames_share_top_and_bottom,
                   test_row_wrap_connector_routes_through_gap,
                   test_frames_snap_two_thirds, test_frames_quarter_half_quarter,
                   test_fifty_fifty_untouched,
