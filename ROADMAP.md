@@ -16,8 +16,12 @@ Extraction rules in SKILL.md (spatial mapping, snapping exception, arrow directi
 
 ## 4. Cross-host install & validation — IN PROGRESS
 
-Install docs written for Claude Code, Claude Cowork, and GitHub Copilot CLI. Awaiting hands-on testing with real photos on each host — checklist in specs/epic-4-cross-host-validation.md.
+Install docs written for Claude Code, Claude Cowork, and GitHub Copilot CLI. Awaiting hands-on testing with real photos on each host — checklist in specs/epic-4-cross-host-validation.md. Sign-off deferred until Epic 5 lands: validating output with known layout deficiencies would burn test photos on results we already know are wrong.
 
-## 5. Publish v1 — PENDING
+## 5. Consulting layout conventions — IN PROGRESS (2026-07-10)
 
-Blocked on Epic 4. Public repo github.com/albertojb/sketch-to-slide not yet created; local git history is ready to push.
+Bounded equidistant distribution, flush snap for header chips, canonical frame ratios (2/3+1/3, thirds, 25/50/25), contract-level `table` type expanded to lines + header boxes + borderless text (never the native PPT table object), consulting transcription rules in SKILL.md, tracked photo fixtures. Spec: specs/epic-5-consulting-layout-conventions.md. Issues #1–#4.
+
+## 6. Publish v1 — PENDING
+
+Blocked on Epics 4–5. Repo is public at github.com/albertojb/sketch-to-slide; v1 tag waits on validation.

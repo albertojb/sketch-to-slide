@@ -11,7 +11,10 @@ NORTH STAR (from GOAL.md, the drift anchor): **faithful conversion, not reinterp
 ## Commands
 
 ```bash
-# Smoke test end to end (no test framework; this IS the test)
+# Full self-check: tidy-pass assertions + end-to-end render+verify on every example fixture
+python3 tests/run.py
+
+# Manual single run
 python3 scripts/render.py examples/sample-layout.json -o /tmp/sample.pptx
 python3 scripts/verify.py examples/sample-layout.json /tmp/sample.pptx   # JSON with "passed": true/false
 

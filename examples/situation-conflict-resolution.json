@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "title": "Situation Conflict Resolution",
+  "elements": [
+    {"id": "h1", "type": "rect", "x": 0.05, "y": 0.16, "w": 0.24, "h": 0.10, "text": "Context", "bold": true},
+    {"id": "c1", "type": "rect", "x": 0.05, "y": 0.27, "w": 0.24, "h": 0.60, "bullets": ["…", "…", "…"]},
+    {"id": "h2", "type": "rect", "x": 0.36, "y": 0.16, "w": 0.24, "h": 0.10, "text": "Solution", "bold": true},
+    {"id": "c2", "type": "rect", "x": 0.36, "y": 0.27, "w": 0.24, "h": 0.60, "bullets": ["…", "…", "…"]},
+    {"id": "tr", "type": "triangle_right", "x": 0.63, "y": 0.45, "w": 0.07, "h": 0.14},
+    {"id": "h3", "type": "rect", "x": 0.73, "y": 0.16, "w": 0.24, "h": 0.10, "text": "Impact", "bold": true},
+    {"id": "c3", "type": "rect", "x": 0.73, "y": 0.27, "w": 0.24, "h": 0.60, "bullets": ["…", "…", "…"]}
+  ]
+}
