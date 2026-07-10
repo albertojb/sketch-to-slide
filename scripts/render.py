@@ -439,7 +439,6 @@ def _snap_frames(boxes):
     for i, (g, c) in enumerate(zip(frames, best[1])):
         new_w = c * total
         f = new_w / (g["hi"] - g["lo"])
-        dv = pos - g["lo"]
         for b in g["boxes"]:
             b["x"] = pos + (b["x"] - g["lo"]) * f
             b["w"] *= f
