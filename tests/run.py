@@ -143,6 +143,22 @@ def test_flush_in_drawn_space():
     assert abs(gap) < 1e-9, f"chip not flush after upscale: gap {gap}"
 
 
+def test_flush_survives_size_unification():
+    # field test 2026-07-10: chip drawn exactly flush; size unification pools
+    # chip height with the content squares and pushes its bottom edge into the
+    # frame — flush snap must repair the overlap, not just positive gaps
+    layout = {"version": 1, "title": "t", "elements": [
+        {"id": "chip", "type": "rect", "x": 0.04, "y": 0.28, "w": 0.18, "h": 0.07, "text": "INPUT", "bold": True},
+        {"id": "frame", "type": "rect", "x": 0.04, "y": 0.35, "w": 0.18, "h": 0.50},
+        {"id": "s1", "type": "rect", "x": 0.09, "y": 0.40, "w": 0.07, "h": 0.09},
+        {"id": "s2", "type": "rect", "x": 0.09, "y": 0.55, "w": 0.07, "h": 0.09},
+        {"id": "s3", "type": "rect", "x": 0.09, "y": 0.70, "w": 0.07, "h": 0.09},
+    ]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    delta = byid["frame"]["y"] - (byid["chip"]["y"] + byid["chip"]["h"])
+    assert abs(delta) < 1e-9, f"chip not flush on frame (delta {delta:+.4f})"
+
+
 def test_end_to_end():
     for name in sorted(os.listdir(os.path.join(ROOT, "examples"))):
         if not name.endswith(".json"):
@@ -164,6 +180,7 @@ def test_end_to_end():
 if __name__ == "__main__":
     for check in (test_scr_distribution, test_uneven_untouched,
                   test_bridged_gaps_equalize, test_flush_in_drawn_space,
+                  test_flush_survives_size_unification,
                   test_frames_snap_two_thirds, test_frames_quarter_half_quarter,
                   test_fifty_fifty_untouched,
                   test_table_expansion, test_no_native_table_object,

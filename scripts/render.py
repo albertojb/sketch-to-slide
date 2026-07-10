@@ -237,8 +237,11 @@ def _snap_flush(boxes, fx, fy):
     The contract's 1.5% bound is on the DRAWN gap, so the tolerance is scaled
     by the canvas-fit factors (fx, fy) — otherwise an upscaled small sketch
     misses snaps and a downscaled one snaps boxes that weren't near-touching.
-    The smaller box moves to close the gap; requires >=50% overlap on the
-    perpendicular axis so unrelated neighbors are never pulled together.
+    The bound is symmetric: slightly apart OR slightly overlapping both mean
+    "drawn touching" (earlier passes like size unification can push a
+    drawn-flush chip edge into its body box). The smaller box moves to close
+    the gap; requires >=50% overlap on the perpendicular axis so unrelated
+    neighbors are never pulled together.
     """
     for a in boxes:
         for b in boxes:
@@ -246,12 +249,12 @@ def _snap_flush(boxes, fx, fy):
                 continue
             ov = _overlap(a["x"], a["x"] + a["w"], b["x"], b["x"] + b["w"])
             gap = b["y"] - (a["y"] + a["h"])
-            if 0 < gap <= FLUSH_TOL * fy and ov >= 0.5 * min(a["w"], b["w"]):
+            if gap != 0 and abs(gap) <= FLUSH_TOL * fy and ov >= 0.5 * min(a["w"], b["w"]):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["y"] += gap if small is a else -gap
             ov = _overlap(a["y"], a["y"] + a["h"], b["y"], b["y"] + b["h"])
             gap = b["x"] - (a["x"] + a["w"])
-            if 0 < gap <= FLUSH_TOL * fx and ov >= 0.5 * min(a["h"], b["h"]):
+            if gap != 0 and abs(gap) <= FLUSH_TOL * fx and ov >= 0.5 * min(a["h"], b["h"]):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["x"] += gap if small is a else -gap
 
