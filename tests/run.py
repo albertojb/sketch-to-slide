@@ -132,6 +132,17 @@ def test_connector_to_table_rejected():
         f"connector-to-table not rejected: rc={r.returncode} stderr={r.stderr}"
 
 
+def test_flush_in_drawn_space():
+    # a small sketch upscaled 2.2x: chip drawn 1.2% above its body must still snap
+    layout = {"version": 1, "elements": [
+        {"id": "chip", "type": "rect", "x": 0.30, "y": 0.300, "w": 0.10, "h": 0.04, "text": "chip"},
+        {"id": "body", "type": "rect", "x": 0.30, "y": 0.352, "w": 0.10, "h": 0.15, "bullets": ["…"]},
+    ]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    gap = byid["body"]["y"] - (byid["chip"]["y"] + byid["chip"]["h"])
+    assert abs(gap) < 1e-9, f"chip not flush after upscale: gap {gap}"
+
+
 def test_end_to_end():
     for name in sorted(os.listdir(os.path.join(ROOT, "examples"))):
         if not name.endswith(".json"):
@@ -152,8 +163,9 @@ def test_end_to_end():
 
 if __name__ == "__main__":
     for check in (test_scr_distribution, test_uneven_untouched,
-                  test_bridged_gaps_equalize, test_frames_snap_two_thirds,
-                  test_frames_quarter_half_quarter, test_fifty_fifty_untouched,
+                  test_bridged_gaps_equalize, test_flush_in_drawn_space,
+                  test_frames_snap_two_thirds, test_frames_quarter_half_quarter,
+                  test_fifty_fifty_untouched,
                   test_table_expansion, test_no_native_table_object,
                   test_connector_to_table_rejected, test_end_to_end):
         check()
