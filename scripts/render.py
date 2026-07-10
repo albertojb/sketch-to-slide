@@ -345,7 +345,7 @@ def _distribute(boxes, connectors, axis):
 CELL_PAD = 0.005
 
 
-def _table_elements(el):
+def _table_elements(el, idx):
     """Expand a table into native primitives: bold header boxes, borderless
     left-aligned text cells, and a horizontal separator line under each body
     row. Never a native PPT table object (contract rule).
@@ -357,7 +357,7 @@ def _table_elements(el):
     header = 1 if cols else 0
     rh = h / (len(rows) + header)
     cw = w / ncols
-    eid = el.get("id") or "table"
+    eid = el.get("id") or f"table{idx}"
     out = []
     for j, head in enumerate(cols):
         out.append({"id": f"{eid}.h{j}", "type": "rect", "x": x + j * cw, "y": y,
@@ -380,8 +380,8 @@ def _table_elements(el):
 
 def _expand_tables(layout):
     out = []
-    for el in layout["elements"]:
-        out.extend(_table_elements(el) if el["type"] == "table" else [el])
+    for i, el in enumerate(layout["elements"]):
+        out.extend(_table_elements(el, i) if el["type"] == "table" else [el])
     layout["elements"] = out
 
 
