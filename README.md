@@ -11,6 +11,10 @@ Faithful conversion, not reinterpretation: nothing is added, merged, redesigned,
 3. `scripts/verify.py` re-opens the .pptx and checks that every element landed — it prints machine-readable JSON with a `passed` boolean. No verbal gate-passes.
 4. `scripts/preview.py` draws a PNG wireframe of the .pptx so the agent can visually compare the result against your photo.
 
+## Self-learning
+
+The skill keeps a per-install journal in `experiences/` (transcription pitfalls, render/verify pitfalls). When a run hits a pattern-level mistake, the agent appends a short append-only `Experience` entry; future runs read the journal before transcribing — or when a gate fails — so the same mistake isn't repeated. Entries stay local to your install.
+
 ## Requirements
 
 Any agent host with vision, shell access, and python3. The only dependency is `python-pptx` (the skill installs it automatically if missing). `Pillow` is optional, used only for the PNG preview.

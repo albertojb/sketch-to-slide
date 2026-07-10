@@ -29,7 +29,7 @@ Photos are often taken sideways or upside down. Use the handwriting as the compa
 
 ## 3. Extract the layout
 
-Read SKILL_DIR/references/contract.md (once per session) — it defines the JSON format exactly.
+Read SKILL_DIR/references/contract.md (once per session) — it defines the JSON format exactly. Also read SKILL_DIR/experiences/transcription.md (once per session) — transcription pitfalls this install has learned from earlier runs; apply every rule that fits.
 
 Transcribe every drawn element into `layout.json`, written next to the photo:
 
@@ -80,5 +80,28 @@ Tell the user:
 # Failure modes
 
 - Photo too blurry or diagram unreadable → ask for a better photo; do not guess a layout.
-- render.py or verify.py errors → stderr JSON says why; fix layout.json accordingly.
+- render.py or verify.py errors → first check SKILL_DIR/experiences/rendering.md for a known pitfall, then the stderr JSON says why; fix layout.json accordingly.
 - A drawn shape has no contract type (e.g. a cloud or a star) → use the closest contract type (clouds/blobs → `rounded_rect`) and tell the user about the substitution.
+
+# Self-learning (per install)
+
+At the end of every run, classify each mistake you had to correct — a transcription error caught in the visual check, a gate failure, a user correction:
+
+- **ONE-TIME** — specific to this photo → no persistence.
+- **PATTERN** — could recur on future sketches → append an entry to the matching file:
+  - seeing/transcription mistakes → SKILL_DIR/experiences/transcription.md
+  - render/verify/script pitfalls → SKILL_DIR/experiences/rendering.md
+
+Entry format (files are append-only; never delete an entry — mark outdated ones `Superseded by NNN`):
+
+```markdown
+## Experience NNN — <short title>
+
+**Date**: YYYY-MM-DD
+**Problem**: <one line>
+**Root Cause**: <why it happened>
+**Fix**: <what was done this run>
+**Rule**: <one sentence a future run can apply>
+```
+
+Experiences stay local to this install. Describe the pitfall generically — do not copy the user's sketch content into an entry beyond what the pitfall needs.
