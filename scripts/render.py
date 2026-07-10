@@ -143,7 +143,7 @@ def _fit_canvas(layout):
         elif "x1" in el:
             pts += [(el["x1"], el["y1"]), (el["x2"], el["y2"])]
     if not pts:
-        return
+        return 1.0, 1.0
     x0 = min(p[0] for p in pts)
     x1 = max(p[0] for p in pts)
     y0 = min(p[1] for p in pts)
@@ -169,6 +169,7 @@ def _fit_canvas(layout):
         elif "x1" in el:
             el["x1"], el["y1"] = tx(el["x1"]), ty(el["y1"])
             el["x2"], el["y2"] = tx(el["x2"]), ty(el["y2"])
+    return fx, fy
 
 
 def _cluster(values, tol):
@@ -226,9 +227,12 @@ def _overlap(a0, a1, b0, b1):
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
-def _snap_flush(boxes):
+def _snap_flush(boxes, fx, fy):
     """Boxes drawn touching or nearly touching snap flush (e.g. header chips).
 
+    The contract's 1.5% bound is on the DRAWN gap, so the tolerance is scaled
+    by the canvas-fit factors (fx, fy) — otherwise an upscaled small sketch
+    misses snaps and a downscaled one snaps boxes that weren't near-touching.
     The smaller box moves to close the gap; requires >=50% overlap on the
     perpendicular axis so unrelated neighbors are never pulled together.
     """
@@ -238,12 +242,12 @@ def _snap_flush(boxes):
                 continue
             ov = _overlap(a["x"], a["x"] + a["w"], b["x"], b["x"] + b["w"])
             gap = b["y"] - (a["y"] + a["h"])
-            if 0 < gap <= FLUSH_TOL and ov >= 0.5 * min(a["w"], b["w"]):
+            if 0 < gap <= FLUSH_TOL * fy and ov >= 0.5 * min(a["w"], b["w"]):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["y"] += gap if small is a else -gap
             ov = _overlap(a["y"], a["y"] + a["h"], b["y"], b["y"] + b["h"])
             gap = b["x"] - (a["x"] + a["w"])
-            if 0 < gap <= FLUSH_TOL and ov >= 0.5 * min(a["h"], b["h"]):
+            if 0 < gap <= FLUSH_TOL * fx and ov >= 0.5 * min(a["h"], b["h"]):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["x"] += gap if small is a else -gap
 
@@ -386,12 +390,12 @@ def normalize_layout(layout):
     layout = copy.deepcopy(layout)
     els = layout["elements"]
     _fix_circles(els)
-    _fit_canvas(layout)
+    fx, fy = _fit_canvas(layout)
     boxes = [el for el in els if _is_box(el)]
     connectors = [el for el in els if el["type"] in CONNECTOR_TYPES]
     _align(boxes)
     _unify_sizes(boxes)
-    _snap_flush(boxes)
+    _snap_flush(boxes, fx, fy)
     _distribute(boxes, connectors, 0)
     _distribute(boxes, connectors, 1)
     _fix_circles(els)
