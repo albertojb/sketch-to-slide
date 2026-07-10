@@ -2,7 +2,7 @@
 
 Draw a slide on paper or a whiteboard. Photograph it. Get back an editable 16:9 PowerPoint slide rebuilt from native PPT objects — text boxes, rectangles, circles, ellipses, diamonds, chevrons, triangles, bullets, lines, and arrows — laid out the way you drew it.
 
-Faithful conversion, not reinterpretation: nothing is added, merged, redesigned, or "improved". A deterministic tidy pass aligns rows and columns, unifies near-identical sizes, and fits the drawing to the slide — mapping, not redesign. Connectors glue to shape sides and route as clean orthogonal elbows, so they survive editing in PowerPoint. Neutral black-on-white styling with no font family set, so the slide adapts to any corporate template you paste it into.
+Faithful conversion, not reinterpretation: nothing is added, merged, redesigned, or "improved". A deterministic tidy pass aligns rows and columns, unifies near-identical sizes, makes 3+ similar boxes equidistant, snaps header chips flush and 2–3 content frames to canonical consulting splits (2/3+1/3, thirds, 25/50/25), and fits the drawing to the slide — every snap bounded by an explicit tolerance, so it stays mapping, not redesign. Sketched tables become grids of native shapes (header boxes, borderless text, separator lines), never PowerPoint table objects. Connectors glue to shape sides and route as clean orthogonal elbows, so they survive editing in PowerPoint. Neutral black-on-white styling with no font family set, so the slide adapts to any corporate template you paste it into.
 
 ## How it works
 
