@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "title": "Initiative effort vs. impact",
+  "elements": [
+    {"id": "t1", "type": "table", "x": 0.08, "y": 0.20, "w": 0.60, "h": 0.55,
+     "columns": ["Initiative", "Effort", "Impact"],
+     "rows": [
+       ["Self-serve onboarding", "Low", "High"],
+       ["Pricing revamp", "Medium", "High"],
+       ["Field-ops copilot", "High", "[illegible]"]
+     ]},
+    {"id": "n1", "type": "text", "x": 0.08, "y": 0.85, "w": 0.50, "h": 0.06,
+     "text": "Source: workshop whiteboard", "size": "small"}
+  ]
+}

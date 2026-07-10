@@ -41,9 +41,16 @@ Transcribe every drawn element into `layout.json`, written next to the photo:
 - For every line or arrow, identify the two shapes its endpoints actually touch in the sketch and connect exactly those (`from`/`to`). Never reroute a connector to a different shape because it "makes more sense".
 - Arrow direction follows the drawn arrowhead: `from` is the tail, `to` is the head. Arrowheads on both ends means `double_arrow`; no arrowhead means `line`.
 - A title written across the top of the sketch goes in the top-level `title` field, not in `elements`.
-- A small label box attached to or on top of a bigger box (a header chip) is its own `rect` with `bold: true`.
+- A small label box attached to or on top of a bigger box (a header chip) is its own `rect` with `bold: true`. Transcribe it touching (or nearly touching) its body box; the renderer snaps it flush.
+- A drawn table (grid with rows and columns) is ONE `table` element — never transcribe its grid lines, header cells, or body cells as separate elements. Put column headers in `columns`, cell text in `rows` (row-major, `"[illegible]"` for unreadable cells), and set `row_headers: true` when the first column is clearly a header column. The renderer builds the grid from native shapes; consulting slides never use PowerPoint table objects.
 - Text you cannot read becomes "[illegible]" — never guess or invent words.
 - Ignore smudges, eraser ghosts, and camera artifacts. Do not ignore faint but deliberate marks.
+
+Consulting layout conventions (the renderer enforces these deterministically — your job is only to transcribe structure honestly):
+
+- 3+ similar boxes in a row or column are almost always meant to be equal-size and equidistant, even with arrows or a chevron between them. Transcribe rough positions in the right ORDER with roughly similar gaps; do not fuss over exact spacing. Only spread gaps unevenly when the sketch is clearly deliberate about it (e.g. a timeline with clustered milestones) — the renderer preserves gaps that differ by more than 2×.
+- 2–3 tall side-by-side frames dividing the page follow canonical splits: 2/3 + 1/3, equal thirds, or 1/4 + 1/2 + 1/4. Transcribe their rough widths; if they are near one of these splits the renderer snaps them exactly, so don't force it — a genuine 50/50 stays 50/50.
+- A small shape between two row members (a triangle or chevron marking flow) belongs to the gap; the renderer re-centers it there.
 
 ## 4. Render
 

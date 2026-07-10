@@ -38,6 +38,7 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 | `triangle_down` | `x, y, w, h` | triangle pointing down |
 | `triangle_left` | `x, y, w, h` | triangle pointing left |
 | `text` | `x, y, w, h` | free-standing text, no outline, no fill |
+| `table` | `x, y, w, h` + `columns`, `rows` | expanded by the renderer into header boxes, borderless text cells, and separator lines — never a native PPT table object (see below) |
 | `line` | `from`+`to` or `x1, y1, x2, y2` | no arrowheads |
 | `arrow` | `from`+`to` or `x1, y1, x2, y2` | arrowhead at the `to` / `(x2, y2)` end |
 | `double_arrow` | `from`+`to` or `x1, y1, x2, y2` | arrowheads at both ends |
@@ -52,6 +53,10 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 | `size` | boxes, text | `body` | `title` (20pt) / `body` (12pt) / `small` (9pt) |
 | `bold` | boxes, text | `false` | |
 | `align` | boxes, text | `center` for shapes, `left` for `text` | `left` / `center` / `right` |
+
+## Tables
+
+A drawn table (grid of rows and columns) is one `table` element — never transcribe its individual lines and cells. `columns` is an optional list of header strings (rendered as bold header boxes across the top); `rows` is a required non-empty list of rows, each a list of cell strings (rendered as borderless left-aligned text); every row must have the same cell count. Optional `row_headers: true` renders each row's first cell as a bold header box. The renderer expands the table deterministically: equal column widths, equal row heights, a thin horizontal separator under each body row — native shapes only, never a PowerPoint table object, so the result stays editable anywhere. Connectors cannot reference a table's id.
 
 Connectors with `from`/`to` reference element ids; the renderer attaches them at side midpoints (top/left/bottom/right, picked by direction), glues them to the shapes so they survive editing, and routes misaligned connections as clean orthogonal elbows instead of diagonals. Use raw `x1, y1, x2, y2` only for lines that don't connect two boxes (dividers, axes, underlines).
 
@@ -80,6 +85,7 @@ Consulting-format exceptions (bounded, deterministic — mapping, not redesign):
 
 1. **Equidistant distribution** — 3+ boxes (or column-groups such as a header chip plus its body box) aligned in a row or column, whose edge-to-edge gaps are already similar (largest ≤ 2× smallest; a gap occupied by a small drawn shape or bridged by a connector is exempt from the bound), are redistributed to exactly equal gaps with the group's outer span kept fixed. Shapes drawn inside a gap are re-centered within it. Gaps outside the bound are deliberate and never touched.
 2. **Flush snap** — boxes drawn touching or nearly touching (≤ ~1.5% apart, with ≥50% overlap on the perpendicular axis) snap flush; e.g. a header chip sits exactly on its body box.
+3. **Canonical frame ratios** — 2–3 tall frames (column-groups whose height spans ≥55% of the content height, jointly covering ≥70% of the content width, non-overlapping) whose width fractions are within 8 points of a canonical consulting split — 1/3+2/3, 2/3+1/3, equal thirds, or 1/4+1/2+1/4 — snap to the exact ratio; gutters are then equalized by the distribution rule when its bound allows. A split matching no canon (e.g. 50/50) stays untouched.
 
 ## Example
 
