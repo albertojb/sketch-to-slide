@@ -76,6 +76,11 @@ Elements are transcribed, never added, merged, or rearranged; illegible text bec
 
 Snapping exception: elements clearly meant to align (within ~3%) may be given identical coordinates or sizes. That is mapping, not redesign.
 
+Consulting-format exceptions (bounded, deterministic — mapping, not redesign):
+
+1. **Equidistant distribution** — 3+ boxes (or column-groups such as a header chip plus its body box) aligned in a row or column, whose edge-to-edge gaps are already similar (largest ≤ 2× smallest; a gap occupied by a small drawn shape or bridged by a connector is exempt from the bound), are redistributed to exactly equal gaps with the group's outer span kept fixed. Shapes drawn inside a gap are re-centered within it. Gaps outside the bound are deliberate and never touched.
+2. **Flush snap** — boxes drawn touching or nearly touching (≤ ~1.5% apart, with ≥50% overlap on the perpendicular axis) snap flush; e.g. a header chip sits exactly on its body box.
+
 ## Example
 
 ```json

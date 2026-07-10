@@ -51,6 +51,9 @@ COL_TOL = 0.035
 SIZE_TOL_W = 0.035
 SIZE_TOL_H = 0.05
 STRAIGHT_TOL = 0.02
+FLUSH_TOL = 0.015
+GAP_RATIO_MAX = 2.0
+DECOR_FRAC = 0.5
 
 
 def fail(msg):
@@ -119,7 +122,7 @@ def _fit_canvas(layout):
         elif "x1" in el:
             pts += [(el["x1"], el["y1"]), (el["x2"], el["y2"])]
     if not pts:
-        return
+        return 1.0, 1.0
     x0 = min(p[0] for p in pts)
     x1 = max(p[0] for p in pts)
     y0 = min(p[1] for p in pts)
@@ -145,6 +148,7 @@ def _fit_canvas(layout):
         elif "x1" in el:
             el["x1"], el["y1"] = tx(el["x1"]), ty(el["y1"])
             el["x2"], el["y2"] = tx(el["x2"]), ty(el["y2"])
+    return fx, fy
 
 
 def _cluster(values, tol):
@@ -198,15 +202,138 @@ def _unify_sizes(boxes):
                 b["y"] = cy - mean / 2
 
 
+def _overlap(a0, a1, b0, b1):
+    return max(0.0, min(a1, b1) - max(a0, b0))
+
+
+def _snap_flush(boxes, fx, fy):
+    """Boxes drawn touching or nearly touching snap flush (e.g. header chips).
+
+    The contract's 1.5% bound is on the DRAWN gap, so the tolerance is scaled
+    by the canvas-fit factors (fx, fy) — otherwise an upscaled small sketch
+    misses snaps and a downscaled one snaps boxes that weren't near-touching.
+    The smaller box moves to close the gap; requires >=50% overlap on the
+    perpendicular axis so unrelated neighbors are never pulled together.
+    """
+    for a in boxes:
+        for b in boxes:
+            if a is b:
+                continue
+            ov = _overlap(a["x"], a["x"] + a["w"], b["x"], b["x"] + b["w"])
+            gap = b["y"] - (a["y"] + a["h"])
+            if 0 < gap <= FLUSH_TOL * fy and ov >= 0.5 * min(a["w"], b["w"]):
+                small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
+                small["y"] += gap if small is a else -gap
+            ov = _overlap(a["y"], a["y"] + a["h"], b["y"], b["y"] + b["h"])
+            gap = b["x"] - (a["x"] + a["w"])
+            if 0 < gap <= FLUSH_TOL * fx and ov >= 0.5 * min(a["h"], b["h"]):
+                small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
+                small["x"] += gap if small is a else -gap
+
+
+def _groups_by_center(boxes, axis):
+    """Cluster boxes into column-groups (axis 0) or row-groups (axis 1).
+
+    A group is the set of boxes sharing a center on that axis (a header chip
+    and its body box form one column-group), so distribution moves them as a
+    unit and never breaks their internal alignment.
+    """
+    p, s = ("x", "w") if axis == 0 else ("y", "h")
+    centers = [b[p] + b[s] / 2 for b in boxes]
+    tol = COL_TOL if axis == 0 else ROW_TOL
+    groups = []
+    for _mean, idxs in _cluster(centers, tol):
+        grp = [boxes[i] for i in idxs]
+        groups.append({
+            "boxes": grp,
+            "lo": min(b[p] for b in grp),
+            "hi": max(b[p] + b[s] for b in grp),
+        })
+    groups.sort(key=lambda g: g["lo"])
+    return groups
+
+
+def _distribute(boxes, connectors, axis):
+    """Equidistant distribution of 3+ aligned groups (contract: consulting
+    exception 1). Bounded: gaps must already be similar (largest <= 2x
+    smallest); a gap occupied by a small drawn shape or bridged by a
+    connector is exempt from the bound. Uneven beyond the bound is
+    deliberate and left untouched.
+    """
+    p = "x" if axis == 0 else "y"
+    groups = _groups_by_center(boxes, axis)
+    if len(groups) < 3:
+        return
+    extents = sorted(g["hi"] - g["lo"] for g in groups)
+    median = extents[len(extents) // 2]
+    members = [g for g in groups if g["hi"] - g["lo"] >= DECOR_FRAC * median]
+    decor = [g for g in groups if g["hi"] - g["lo"] < DECOR_FRAC * median]
+    if len(members) < 3:
+        return
+    for a, b in zip(members, members[1:]):
+        if b["lo"] - a["hi"] < -0.005:  # ponytail: overlapping bands = not a clean banded layout; bail
+            return
+    member_ids = [
+        {b.get("id") for b in g["boxes"] if b.get("id")} for g in members
+    ]
+
+    def bridged(i):
+        return any(
+            (c.get("from") in member_ids[i] and c.get("to") in member_ids[i + 1])
+            or (c.get("to") in member_ids[i] and c.get("from") in member_ids[i + 1])
+            for c in connectors
+        )
+
+    gaps = [b["lo"] - a["hi"] for a, b in zip(members, members[1:])]
+    decor_gap = {}
+    for d in decor:
+        c = (d["lo"] + d["hi"]) / 2
+        for i in range(len(members) - 1):
+            if members[i]["hi"] <= c <= members[i + 1]["lo"]:
+                decor_gap[id(d)] = i
+                break
+    free = [
+        g for i, g in enumerate(gaps)
+        if i not in decor_gap.values() and not bridged(i)
+    ]
+    if len(free) >= 2 and max(free) > GAP_RATIO_MAX * max(min(free), 1e-9):
+        return
+    span_lo, span_hi = members[0]["lo"], members[-1]["hi"]
+    total = sum(g["hi"] - g["lo"] for g in members)
+    gap = (span_hi - span_lo - total) / (len(members) - 1)
+    if gap < 0:
+        return
+    pos = span_lo
+    for g in members:
+        dv = pos - g["lo"]
+        for b in g["boxes"]:
+            b[p] += dv
+        size = g["hi"] - g["lo"]
+        g["lo"], g["hi"] = pos, pos + size
+        pos += size + gap
+    for d in decor:
+        i = decor_gap.get(id(d))
+        if i is None:
+            continue
+        mid = (members[i]["hi"] + members[i + 1]["lo"]) / 2
+        dv = mid - (d["lo"] + d["hi"]) / 2
+        for b in d["boxes"]:
+            b[p] += dv
+
+
 def normalize_layout(layout):
     """Deterministic tidy pass shared by render and verify. Returns a deep copy."""
     layout = copy.deepcopy(layout)
     els = layout["elements"]
     _fix_circles(els)
-    _fit_canvas(layout)
+    fx, fy = _fit_canvas(layout)
     boxes = [el for el in els if _is_box(el)]
+    connectors = [el for el in els if el["type"] in CONNECTOR_TYPES]
     _align(boxes)
     _unify_sizes(boxes)
+    _snap_flush(boxes, fx, fy)
+    _distribute(boxes, connectors, 0)
+    _distribute(boxes, connectors, 1)
     _fix_circles(els)
     return layout
 
