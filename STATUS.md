@@ -1,10 +1,10 @@
 # STATUS
 
-## Next run starts here (2026-07-10)
+## Next run starts here (2026-07-10, end of day)
 
-- Epic 5 (consulting layout conventions) is merged to main — squash commits `7275d4d` + `49843be`, from PRs #5–#9, each independently reviewed to APPROVE.
-- **Next bucket: Epic 4 — cross-host validation.** Alberto hands-on: run the skill in Claude Code, Claude Cowork, and GitHub Copilot CLI against the photos in `examples/field-tests/`; checklist in `specs/epic-4-cross-host-validation.md`. Now unblocked.
-- Test command: `python3 tests/run.py` (11 checks, green on main).
+- Epic 5 merged (PRs #5–#9) plus a same-day field-fix round from two real Claude Code runs, all independently reviewed to APPROVE and merged: PR #12 (flush snap repairs overlaps), PR #15 (MCK-style black header bands via `header: true`, overlap-aware bottom→top connector routing, fill-aware preview), PR #18 (bands drawn as a frame's top compartment seat flush and render on top; frame detection gates on tallest single box; detected frames align top/bottom edges; SKILL.md defaults: rect unless clearly rounded, no arrowhead = line).
+- **Next bucket: Epic 4 — cross-host validation.** Alberto hands-on (next session, different PC): install fresh from GitHub, run the skill in Claude Code, Claude Cowork, and GitHub Copilot CLI against the photos in `examples/field-tests/`; checklist in `specs/epic-4-cross-host-validation.md`.
+- Test command: `python3 tests/run.py` (18 checks, green on main).
 
 ## What landed (Epic 5)
 
