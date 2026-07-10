@@ -40,16 +40,19 @@ def draw_arrowhead(d, tip, src, size=10):
                fill="black", width=2)
 
 
-def elbow_points(p1, p2):
-    dx, dy = abs(p2[0] - p1[0]), abs(p2[1] - p1[1])
-    if dx >= dy:
-        mx = (p1[0] + p2[0]) / 2
-        return [p1, (mx, p1[1]), (mx, p2[1]), p2]
-    my = (p1[1] + p2[1]) / 2
-    return [p1, (p1[0], my), (p2[0], my), p2]
+def elbow_points(p1, p2, vertical_first=None):
+    # vertical_first mirrors PowerPoint's routing: a connector glued to a
+    # top/bottom site exits vertically before turning
+    if vertical_first is None:
+        vertical_first = abs(p2[1] - p1[1]) > abs(p2[0] - p1[0])
+    if vertical_first:
+        my = (p1[1] + p2[1]) / 2
+        return [p1, (p1[0], my), (p2[0], my), p2]
+    mx = (p1[0] + p2[0]) / 2
+    return [p1, (mx, p1[1]), (mx, p2[1]), p2]
 
 
-def draw_text_block(d, text, cx, cy, w, font, anchor_middle=True, align_center=True, top=None):
+def draw_text_block(d, text, cx, cy, w, font, anchor_middle=True, align_center=True, top=None, color="black"):
     lines = text.split("\n")
     lh = font.size + 4
     total = lh * len(lines)
@@ -57,8 +60,16 @@ def draw_text_block(d, text, cx, cy, w, font, anchor_middle=True, align_center=T
     for ln in lines:
         tw = d.textlength(ln, font=font)
         x = cx - tw / 2 if align_center else cx - w / 2 + 6
-        d.text((x, y), ln, fill="black", font=font)
+        d.text((x, y), ln, fill=color, font=font)
         y += lh
+
+
+def _solid_black(sp):
+    try:
+        from pptx.enum.dml import MSO_FILL
+        return sp.fill.type == MSO_FILL.SOLID and str(sp.fill.fore_color.rgb) == "000000"
+    except Exception:
+        return False
 
 
 def render_preview(pptx_path, out_path):
@@ -79,12 +90,19 @@ def render_preview(pptx_path, out_path):
     for sp in slide.shapes:
         (conns if isinstance(sp, Connector) else shapes).append(sp)
 
+    boxes_px = [(px(sp.left), py(sp.top), px(sp.left + sp.width), py(sp.top + sp.height))
+                for sp in shapes]
+
+    def on_horizontal_edge(p):
+        return any(bx0 - 1 <= p[0] <= bx1 + 1 and (abs(p[1] - by1) <= 2 or abs(p[1] - by0) <= 2)
+                   for bx0, by0, bx1, by1 in boxes_px)
+
     for sp in conns:
         p1 = (px(sp.begin_x), py(sp.begin_y))
         p2 = (px(sp.end_x), py(sp.end_y))
         prst = sp._element.find(qn("p:spPr")).find(qn("a:prstGeom"))
         bent = prst is not None and "bent" in (prst.get("prst") or "")
-        pts = elbow_points(p1, p2) if bent else [p1, p2]
+        pts = elbow_points(p1, p2, on_horizontal_edge(p1) or None) if bent else [p1, p2]
         d.line(pts, fill="black", width=2)
         ln = sp.line._get_or_add_ln()
         if ln.find(qn("a:tailEnd")) is not None:
@@ -132,7 +150,7 @@ def render_preview(pptx_path, out_path):
         elif auto == MSO_SHAPE.ROUNDED_RECTANGLE:
             d.rounded_rectangle(box, radius=min(w, h) * 0.15, outline="black", width=2)
         elif auto == MSO_SHAPE.RECTANGLE:
-            d.rectangle(box, outline="black", width=2)
+            d.rectangle(box, outline="black", width=2, fill="black" if _solid_black(sp) else None)
 
         if sp.has_text_frame and sp.text_frame.text.strip():
             tf = sp.text_frame
@@ -155,13 +173,14 @@ def render_preview(pptx_path, out_path):
             if first.alignment == PP_ALIGN.LEFT:
                 centered = False
             txt = tf.text
+            tcol = "white" if _solid_black(sp) else "black"
             if bold:
                 d.text((x + (w - d.textlength(txt.split("\n")[0], font=font)) / 2 if centered else x + 4,
                         y + (h - font.size) / 2 if middle else y + 4),
-                       txt, fill="black", font=font, stroke_width=1, stroke_fill="black")
+                       txt, fill=tcol, font=font, stroke_width=1, stroke_fill=tcol)
             else:
                 draw_text_block(d, txt, x + w / 2, y + h / 2, w, font,
-                                anchor_middle=middle, align_center=centered, top=y + 4)
+                                anchor_middle=middle, align_center=centered, top=y + 4, color=tcol)
 
     img.save(out_path)
     print(out_path)

@@ -159,6 +159,60 @@ def test_flush_survives_size_unification():
     assert abs(delta) < 1e-9, f"chip not flush on frame (delta {delta:+.4f})"
 
 
+def test_header_band_geometry():
+    # field test 2026-07-10 (MCK style): header chip becomes a fixed-height band,
+    # flush on its frame, never pooled with content-box sizes
+    layout = {"version": 1, "title": "t", "elements": [
+        {"id": "chip", "type": "rect", "x": 0.04, "y": 0.28, "w": 0.18, "h": 0.07, "text": "INPUT", "header": True},
+        {"id": "frame", "type": "rect", "x": 0.04, "y": 0.35, "w": 0.18, "h": 0.50},
+        {"id": "s1", "type": "rect", "x": 0.09, "y": 0.40, "w": 0.07, "h": 0.09},
+        {"id": "s2", "type": "rect", "x": 0.09, "y": 0.55, "w": 0.07, "h": 0.09},
+    ]}
+    byid = {e["id"]: e for e in R.normalize_layout(layout)["elements"]}
+    assert abs(byid["chip"]["h"] - R.HEADER_H) < 1e-9, f"band height {byid['chip']['h']}"
+    delta = byid["frame"]["y"] - (byid["chip"]["y"] + byid["chip"]["h"])
+    assert abs(delta) < 1e-9, f"band not flush on frame (delta {delta:+.4f})"
+
+
+def test_header_band_style():
+    from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    layout = {"version": 1, "elements": [
+        {"id": "chip", "type": "rect", "x": 0.1, "y": 0.2, "w": 0.4, "h": 0.08, "text": "INPUT", "header": True},
+        {"id": "frame", "type": "rect", "x": 0.1, "y": 0.28, "w": 0.4, "h": 0.5, "text": "body"},
+    ]}
+    path = os.path.join(tempfile.gettempdir(), "header-style.json")
+    with open(path, "w") as f:
+        json.dump(layout, f)
+    out = os.path.join(tempfile.gettempdir(), "header-style.pptx")
+    subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "render.py"), path, "-o", out],
+                   check=True, capture_output=True)
+    prs = Presentation(out)
+    band = next(sp for sp in prs.slides[0].shapes
+                if sp.has_text_frame and sp.text_frame.text == "INPUT")
+    assert band.fill.fore_color.rgb == RGBColor(0, 0, 0), "band fill not black"
+    p = band.text_frame.paragraphs[0]
+    assert p.font.color.rgb == RGBColor(255, 255, 255), "band text not white"
+    assert p.font.bold, "band text not bold"
+    assert p.alignment == PP_ALIGN.LEFT, "band text not left-aligned"
+
+
+def test_row_wrap_connector_routes_through_gap():
+    # last box of row 1 -> first box of row 2: attach bottom->top, not left/right
+    boxes = {"r1c": (0.60, 0.20, 0.10, 0.10), "r2a": (0.10, 0.40, 0.10, 0.10)}
+    el = {"id": "wrap", "type": "line", "from": "r1c", "to": "r2a"}
+    p1, p2, kind, s1, s2 = R.resolve_connector(el, boxes)
+    assert (s1, s2) == (R.SIDE_BOTTOM, R.SIDE_TOP), f"sides {s1},{s2}"
+    assert abs(p1[0] - 0.65) < 1e-9 and abs(p1[1] - 0.30) < 1e-9, f"p1 {p1}"
+    assert abs(p2[0] - 0.15) < 1e-9 and abs(p2[1] - 0.40) < 1e-9, f"p2 {p2}"
+    assert kind == "elbow"
+    # same-row neighbors keep left/right attachment
+    boxes = {"a": (0.10, 0.20, 0.10, 0.10), "b": (0.40, 0.21, 0.10, 0.10)}
+    _, _, _, s1, s2 = R.resolve_connector({"type": "line", "from": "a", "to": "b"}, boxes)
+    assert (s1, s2) == (R.SIDE_RIGHT, R.SIDE_LEFT), f"same-row sides {s1},{s2}"
+
+
 def test_end_to_end():
     for name in sorted(os.listdir(os.path.join(ROOT, "examples"))):
         if not name.endswith(".json"):
@@ -181,6 +235,8 @@ if __name__ == "__main__":
     for check in (test_scr_distribution, test_uneven_untouched,
                   test_bridged_gaps_equalize, test_flush_in_drawn_space,
                   test_flush_survives_size_unification,
+                  test_header_band_geometry, test_header_band_style,
+                  test_row_wrap_connector_routes_through_gap,
                   test_frames_snap_two_thirds, test_frames_quarter_half_quarter,
                   test_fifty_fifty_untouched,
                   test_table_expansion, test_no_native_table_object,

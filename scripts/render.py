@@ -54,6 +54,7 @@ STRAIGHT_TOL = 0.02
 FLUSH_TOL = 0.015
 GAP_RATIO_MAX = 2.0
 DECOR_FRAC = 0.5
+HEADER_H = 0.055
 FRAME_H_FRAC = 0.55
 FRAME_COVER_FRAC = 0.70
 RATIO_TOL = 0.08
@@ -205,10 +206,24 @@ def _align(boxes):
                 boxes[i]["x"] = mean - boxes[i]["w"] / 2
 
 
+def _normalize_headers(boxes):
+    """header: true boxes become slim section-header bands of fixed height,
+    anchored at their drawn bottom edge so a drawn-flush seat on the body box
+    survives; flush snap closes any remaining drawn gap.
+    """
+    for b in boxes:
+        if b.get("header") and b["type"] in SHAPE_MAP:
+            b["y"] = b["y"] + b["h"] - HEADER_H
+            b["h"] = HEADER_H
+
+
 def _unify_sizes(boxes):
     shapes = [b for b in boxes if b["type"] in SHAPE_MAP]
     if len(shapes) < 2:
         return
+    # widths include headers so a band keeps tracking its frame's width;
+    # heights exclude them — band height is contract-fixed and must never be
+    # pooled with content boxes (field test 2026-07-10: chip pooled with squares)
     ws = [b["w"] for b in shapes]
     for mean, idxs in _cluster(ws, SIZE_TOL_W):
         if len(idxs) > 1:
@@ -217,6 +232,9 @@ def _unify_sizes(boxes):
                 cx = b["x"] + b["w"] / 2
                 b["w"] = mean
                 b["x"] = cx - mean / 2
+    shapes = [b for b in shapes if not b.get("header")]
+    if len(shapes) < 2:
+        return
     hs = [b["h"] for b in shapes]
     for mean, idxs in _cluster(hs, SIZE_TOL_H):
         if len(idxs) > 1:
@@ -372,13 +390,13 @@ def _table_elements(el, idx):
     out = []
     for j, head in enumerate(cols):
         out.append({"id": f"{eid}.h{j}", "type": "rect", "x": x + j * cw, "y": y,
-                    "w": cw, "h": rh, "text": head, "bold": True, "size": "small"})
+                    "w": cw, "h": rh, "text": head, "header": True, "size": "small"})
     for i, row in enumerate(rows):
         ry = y + (header + i) * rh
         for j, cell in enumerate(row):
             if el.get("row_headers") and j == 0:
                 out.append({"id": f"{eid}.r{i}c0", "type": "rect", "x": x, "y": ry,
-                            "w": cw, "h": rh, "text": cell, "bold": True, "size": "small"})
+                            "w": cw, "h": rh, "text": cell, "header": True, "size": "small"})
             else:
                 out.append({"id": f"{eid}.r{i}c{j}", "type": "text",
                             "x": x + j * cw + CELL_PAD, "y": ry + CELL_PAD,
@@ -390,6 +408,8 @@ def _table_elements(el, idx):
 
 
 def _expand_tables(layout):
+    # must stay AFTER _normalize_headers in normalize_layout: table cells carry
+    # header:true for STYLE only and keep their computed row height
     out = []
     for i, el in enumerate(layout["elements"]):
         out.extend(_table_elements(el, i) if el["type"] == "table" else [el])
@@ -462,6 +482,7 @@ def normalize_layout(layout):
     fx, fy = _fit_canvas(layout)
     boxes = [el for el in els if _is_box(el)]
     connectors = [el for el in els if el["type"] in CONNECTOR_TYPES]
+    _normalize_headers(boxes)
     _align(boxes)
     _unify_sizes(boxes)
     _snap_flush(boxes, fx, fy)
@@ -504,7 +525,19 @@ def resolve_connector(el, boxes):
     c2 = (x2 + w2 / 2, y2 + h2 / 2)
     dx = (c2[0] - c1[0]) * ASPECT
     dy = c2[1] - c1[1]
-    if abs(dx) >= abs(dy):
+    # overlap-aware side pick: vertically disjoint boxes (a row change) attach
+    # bottom→top so the elbow routes through the inter-row gap instead of
+    # cutting across boxes; same-row boxes attach left/right; only overlapping
+    # boxes fall back to direction dominance
+    vert_disjoint = (y1 + h1 <= y2) or (y2 + h2 <= y1)
+    horiz_disjoint = (x1 + w1 <= x2) or (x2 + w2 <= x1)
+    if vert_disjoint:
+        horizontal = False
+    elif horiz_disjoint:
+        horizontal = True
+    else:
+        horizontal = abs(dx) >= abs(dy)
+    if horizontal:
         p1 = (x1 + w1 if dx >= 0 else x1, c1[1])
         p2 = (x2 if dx >= 0 else x2 + w2, c2[1])
         s1 = SIDE_RIGHT if dx >= 0 else SIDE_LEFT
@@ -551,10 +584,12 @@ def set_text(shape, el):
     bullets = el.get("bullets") or []
     text = el.get("text", "")
     size = el.get("size", "body")
-    bold = el.get("bold", False)
-    default_align = "left" if (el.get("type") == "text" or bullets) else "center"
+    header = bool(el.get("header"))
+    bold = True if header else el.get("bold", False)
+    default_align = "left" if (header or el.get("type") == "text" or bullets) else "center"
     align = el.get("align", default_align)
     tf.vertical_anchor = MSO_ANCHOR.TOP if (el.get("type") == "text" or bullets) else MSO_ANCHOR.MIDDLE
+    color = WHITE if header else BLACK
     pt = Pt(SIZE_PT.get(size, SIZE_PT["body"]))
     lines = []
     if text:
@@ -568,13 +603,13 @@ def set_text(shape, el):
         p.alignment = ALIGN_MAP.get(align, PP_ALIGN.CENTER)
         p.font.size = pt
         p.font.bold = bool(is_bold)
-        p.font.color.rgb = BLACK
+        p.font.color.rgb = color
         if bullets and i > 0:
             p.space_before = Pt(4)
         for r in p.runs:
             r.font.size = pt
             r.font.bold = bool(is_bold)
-            r.font.color.rgb = BLACK
+            r.font.color.rgb = color
 
 
 def set_plain_text(shape, text, size="body", bold=False, align="center"):
@@ -647,7 +682,7 @@ def render(layout, out_path):
             continue
         sp = _add_shape(slide, el)
         sp.fill.solid()
-        sp.fill.fore_color.rgb = WHITE
+        sp.fill.fore_color.rgb = BLACK if el.get("header") else WHITE
         sp.line.color.rgb = BLACK
         sp.line.width = Pt(1)
         _no_shadow(sp)
