@@ -55,6 +55,8 @@ FLUSH_TOL = 0.015
 GAP_RATIO_MAX = 2.0
 DECOR_FRAC = 0.5
 HEADER_H = 0.055
+SEAT_TOL = 0.15
+FRAME_Y_TOL = 0.08
 FRAME_H_FRAC = 0.55
 FRAME_COVER_FRAC = 0.70
 RATIO_TOL = 0.08
@@ -209,12 +211,38 @@ def _align(boxes):
 def _normalize_headers(boxes):
     """header: true boxes become slim section-header bands of fixed height,
     anchored at their drawn bottom edge so a drawn-flush seat on the body box
-    survives; flush snap closes any remaining drawn gap.
+    survives; _seat_headers then settles each band onto its body box.
     """
     for b in boxes:
         if b.get("header") and b["type"] in SHAPE_MAP:
             b["y"] = b["y"] + b["h"] - HEADER_H
             b["h"] = HEADER_H
+
+
+def _seat_headers(boxes, fy):
+    """Seat each band flush ON its body box's top edge. Sketches draw the
+    title band either above the frame or as the frame's top compartment —
+    both mean the same thing, so the search window spans from slightly below
+    flush up to SEAT_TOL (drawn space) inside the body.
+    """
+    for band in boxes:
+        if not (band.get("header") and band["type"] in SHAPE_MAP):
+            continue
+        bottom = band["y"] + band["h"]
+        best = None
+        for body in boxes:
+            if body is band or body.get("header"):
+                continue
+            depth = bottom - body["y"]  # >0 means the band dips into the body
+            if not (-FLUSH_TOL * fy <= depth <= SEAT_TOL * fy):
+                continue
+            ov = _overlap(band["x"], band["x"] + band["w"], body["x"], body["x"] + body["w"])
+            if ov < 0.5 * band["w"]:
+                continue
+            if best is None or (ov, -abs(depth)) > best[0]:
+                best = ((ov, -abs(depth)), body)
+        if best:
+            band["y"] = best[1]["y"] - band["h"]
 
 
 def _unify_sizes(boxes):
@@ -416,7 +444,7 @@ def _expand_tables(layout):
     layout["elements"] = out
 
 
-def _snap_frames(boxes):
+def _snap_frames(boxes, fy=1.0):
     """Canonical frame ratios (contract: consulting exception 3): 2-3 tall
     column-groups jointly spanning the content area, whose width fractions
     are within RATIO_TOL of a canonical consulting split, snap to the exact
@@ -437,9 +465,10 @@ def _snap_frames(boxes):
         return
     frames = []
     for g in _groups_by_center(boxes, 0):
-        gy0 = min(b["y"] for b in g["boxes"])
-        gy1 = max(b["y"] + b["h"] for b in g["boxes"])
-        if gy1 - gy0 >= FRAME_H_FRAC * content_h:
+        # a frame is one tall BOX — a stack of small boxes has a tall union
+        # but is content, not a frame (field test 2026-07-10: a 3-box column
+        # counted as a 4th frame and disabled the whole pass)
+        if max(b["h"] for b in g["boxes"]) >= FRAME_H_FRAC * content_h:
             frames.append(g)
     if len(frames) not in (2, 3):
         return
@@ -447,6 +476,16 @@ def _snap_frames(boxes):
     for a, b in zip(frames, frames[1:]):
         if b["lo"] - a["hi"] < -0.005:
             return
+    # side-by-side frames share top and bottom edges: align the frame boxes
+    # themselves (tallest box per group) when drawn within FRAME_Y_TOL
+    frame_boxes = [max(g["boxes"], key=lambda b: b["h"]) for g in frames]
+    tops = [b["y"] for b in frame_boxes]
+    bots = [b["y"] + b["h"] for b in frame_boxes]
+    if max(tops) - min(tops) <= FRAME_Y_TOL * fy and max(bots) - min(bots) <= FRAME_Y_TOL * fy:
+        t = sum(tops) / len(tops)
+        bo = sum(bots) / len(bots)
+        for b in frame_boxes:
+            b["y"], b["h"] = t, bo - t
     widths = [g["hi"] - g["lo"] for g in frames]
     total = sum(widths)
     if total < FRAME_COVER_FRAC * content_w:
@@ -486,7 +525,8 @@ def normalize_layout(layout):
     _align(boxes)
     _unify_sizes(boxes)
     _snap_flush(boxes, fx, fy)
-    _snap_frames(boxes)
+    _snap_frames(boxes, fy)
+    _seat_headers(boxes, fy)
     _distribute(boxes, connectors, 0)
     _distribute(boxes, connectors, 1)
     _fix_circles(els)
@@ -664,14 +704,15 @@ def render(layout, out_path):
         set_plain_text(tb, layout["title"], size="title", bold=True, align="left")
         counts["textboxes"] += 1
 
-    connectors = []
+    connectors = [el for el in layout["elements"] if el["type"] in CONNECTOR_TYPES]
+    drawables = [el for el in layout["elements"] if el["type"] not in CONNECTOR_TYPES]
+    # headers render last so a band overlapping its frame is never buried
+    # under the frame's white fill
+    drawables.sort(key=lambda el: bool(el.get("header")))
     shapes_by_id = {}
     types_by_id = {}
-    for el in layout["elements"]:
+    for el in drawables:
         t = el["type"]
-        if t in CONNECTOR_TYPES:
-            connectors.append(el)
-            continue
         if t == "text":
             tb = slide.shapes.add_textbox(_ex(el["x"]), _ey(el["y"]), _ex(el["w"]), _ey(el["h"]))
             set_text(tb, el)

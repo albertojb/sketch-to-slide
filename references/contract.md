@@ -52,7 +52,7 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 | `bullets` | boxes, text | — | list of strings rendered as `• ` lines below `text`, top-anchored, left-aligned; use `"…"` for bullet rows drawn as placeholder squiggles |
 | `size` | boxes, text | `body` | `title` (20pt) / `body` (12pt) / `small` (9pt) |
 | `bold` | boxes, text | `false` | |
-| `header` | boxes | `false` | section-header band: fixed slim height (~5.5% of slide, anchored at its drawn bottom edge), black fill, white bold left-aligned text; sits flush on its body box; width unification includes it (a band tracks its frame's width) but height unification excludes it |
+| `header` | boxes | `false` | section-header band: fixed slim height (~5.5% of slide, anchored at its drawn bottom edge), black fill, white bold left-aligned text; seats flush ON its body box's top edge — whether drawn above the box or as its top compartment — and always renders above other shapes; width unification includes it (a band tracks its frame's width) but height unification excludes it |
 | `align` | boxes, text | `center` for shapes, `left` for `text` | `left` / `center` / `right` |
 
 ## Tables
@@ -88,7 +88,7 @@ Consulting-format exceptions (bounded, deterministic — mapping, not redesign):
 
 1. **Equidistant distribution** — 3+ boxes (or column-groups such as a header chip plus its body box) aligned in a row or column, whose edge-to-edge gaps are already similar (largest ≤ 2× smallest; a gap occupied by a small drawn shape or bridged by a connector is exempt from the bound), are redistributed to exactly equal gaps with the group's outer span kept fixed. Shapes drawn inside a gap are re-centered within it. Gaps outside the bound are deliberate and never touched.
 2. **Flush snap** — boxes drawn touching or nearly touching (within ~1.5%, whether slightly apart or slightly overlapping, with ≥50% overlap on the perpendicular axis) snap flush; e.g. a header chip sits exactly on its body box, never doubling or crossing its border.
-3. **Canonical frame ratios** — 2–3 tall frames (column-groups whose height spans ≥55% of the content height, jointly covering ≥70% of the content width, non-overlapping) whose width fractions are within 8 points of a canonical consulting split — 1/3+2/3, 2/3+1/3, equal thirds, or 1/4+1/2+1/4 — snap to the exact ratio; gutters are then equalized by the distribution rule when its bound allows. A split matching no canon (e.g. 50/50) stays untouched.
+3. **Frame edge alignment & canonical ratios** — 2–3 tall side-by-side frames align their top and bottom edges when drawn within ~8%. Frames (column-groups whose height spans ≥55% of the content height, jointly covering ≥70% of the content width, non-overlapping) whose width fractions are within 8 points of a canonical consulting split — 1/3+2/3, 2/3+1/3, equal thirds, or 1/4+1/2+1/4 — snap to the exact ratio; gutters are then equalized by the distribution rule when its bound allows. A split matching no canon (e.g. 50/50) stays untouched.
 
 ## Example
 
