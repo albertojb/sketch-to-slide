@@ -249,12 +249,16 @@ def _snap_flush(boxes, fx, fy):
                 continue
             ov = _overlap(a["x"], a["x"] + a["w"], b["x"], b["x"] + b["w"])
             gap = b["y"] - (a["y"] + a["h"])
-            if gap != 0 and abs(gap) <= FLUSH_TOL * fy and ov >= 0.5 * min(a["w"], b["w"]):
+            # sum-of-heights guard: two boxes both thinner than the bound could
+            # otherwise re-fire on the reverse pair and invert their stacking
+            if (gap != 0 and abs(gap) <= FLUSH_TOL * fy and a["h"] + b["h"] > FLUSH_TOL * fy
+                    and ov >= 0.5 * min(a["w"], b["w"])):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["y"] += gap if small is a else -gap
             ov = _overlap(a["y"], a["y"] + a["h"], b["y"], b["y"] + b["h"])
             gap = b["x"] - (a["x"] + a["w"])
-            if gap != 0 and abs(gap) <= FLUSH_TOL * fx and ov >= 0.5 * min(a["h"], b["h"]):
+            if (gap != 0 and abs(gap) <= FLUSH_TOL * fx and a["w"] + b["w"] > FLUSH_TOL * fx
+                    and ov >= 0.5 * min(a["h"], b["h"])):
                 small = a if a["w"] * a["h"] <= b["w"] * b["h"] else b
                 small["x"] += gap if small is a else -gap
 
