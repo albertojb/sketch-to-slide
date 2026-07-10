@@ -408,6 +408,8 @@ def _table_elements(el, idx):
 
 
 def _expand_tables(layout):
+    # must stay AFTER _normalize_headers in normalize_layout: table cells carry
+    # header:true for STYLE only and keep their computed row height
     out = []
     for i, el in enumerate(layout["elements"]):
         out.extend(_table_elements(el, i) if el["type"] == "table" else [el])

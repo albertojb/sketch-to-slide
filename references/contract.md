@@ -52,7 +52,7 @@ The slide is 16:9 (13.333in × 7.5in). All positions and sizes are normalized 0.
 | `bullets` | boxes, text | — | list of strings rendered as `• ` lines below `text`, top-anchored, left-aligned; use `"…"` for bullet rows drawn as placeholder squiggles |
 | `size` | boxes, text | `body` | `title` (20pt) / `body` (12pt) / `small` (9pt) |
 | `bold` | boxes, text | `false` | |
-| `header` | boxes | `false` | section-header band: fixed slim height (~5.5% of slide, anchored at its drawn bottom edge), black fill, white bold left-aligned text; sits flush on its body box; excluded from size unification |
+| `header` | boxes | `false` | section-header band: fixed slim height (~5.5% of slide, anchored at its drawn bottom edge), black fill, white bold left-aligned text; sits flush on its body box; width unification includes it (a band tracks its frame's width) but height unification excludes it |
 | `align` | boxes, text | `center` for shapes, `left` for `text` | `left` / `center` / `right` |
 
 ## Tables
